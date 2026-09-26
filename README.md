@@ -18,7 +18,10 @@
    - [Optimistic Gossip + Conditional S3 GETs](#optimistic-gossip--conditional-s3-gets)
    - [Amortized Compaction](#amortized-compaction)
 5. [Act IV: Origin – The Platform for the Agentic Era](#-act-iv-origin--the-platform-for-the-agentic-era)
-6. [Architecture Blueprint: Building a Mini S3 Prototype](#-architecture-blueprint-building-a-mini-s3-prototype)
+6. [Act V: Our Working TypeScript + Bun Implementation](#️-act-v-our-working-typescript--bun-implementation)
+7. [Phase Roadmap & Documentation](#-phase-roadmap--documentation)
+8. [Running the System (CLI Demo & Tests)](#-running-the-system)
+9. [Environment Configuration](#️-environment-configuration)
 
 ---
 
@@ -270,46 +273,136 @@ Cursor’s production system, named **Origin**, brings these principles together
 
 ---
 
-## 🛠️ Architecture Blueprint: Building a Mini S3 Prototype
+## 🛠️ Act V: Our Working TypeScript + Bun Implementation
 
-To understand this system deeply, we can implement a clean minimal prototype using AWS S3 (or MinIO / LocalStack):
+We have built a fully functional, production-modeled implementation of **Continuity** and **Origin** using **Bun**, **TypeScript**, and **AWS S3 / Cloudflare R2**.
 
 ```
 git-at-any-scale/
-├── README.md                   # Complete architectural guide (this document)
-├── s3_storage.py               # S3 client wrapper (PUT, conditional CAS, GET 304)
-├── wal_index.py                # Schema & CAS logic for wal_index.json
-├── git_node.py                 # Core node logic: primary ingestion & replica catchup
-├── test_simulation.py          # Multi-node simulation (Primary push, Replica read, CAS race)
-└── requirements.txt            # boto3, etc.
+├── src/
+│   ├── types/
+│   │   ├── storage.ts              # R2StorageInterface (HTTP 200, 304, 412 status contracts)
+│   │   └── wal.ts                  # WALIndexDocument schema & transition interfaces
+│   ├── storage/
+│   │   ├── aws-s3.ts               # Production AWS S3 client with If-Match / If-None-Match
+│   │   ├── cloudflare-r2.ts        # Cloudflare R2 client adapter
+│   │   └── mock-r2.ts              # In-memory thread-safe storage simulator (zero credentials)
+│   ├── models/
+│   │   └── wal-index.ts            # Immutable WAL state transitions, validation, and serialization
+│   ├── engine/
+│   │   ├── git-process.ts          # Native Git execution wrapper via Bun.spawn
+│   │   ├── primary-node.ts         # Ingestion engine (unpackLimit=1, S3 WAL CAS loop, compaction)
+│   │   ├── replica-node.ts         # Read engine (sub-10ms 304, delta catchup, cold materialization)
+│   │   └── rendezvous-router.ts    # HRW hashing router for deterministic, zero-SQL topology & failover
+│   ├── scripts/                    # Live AWS S3 test runners
+│   │   ├── test-real-s3.ts         # Basic write & S3 verification
+│   │   ├── test-real-s3-replication.ts # Read replication & 304 validation
+│   │   ├── test-real-s3-materialize.ts # Cold materialization & eviction
+│   │   ├── test-real-s3-compact.ts # Primary repacking & replica pruning
+│   │   └── test-real-s3-failover.ts # Node crash & instant failover
+│   ├── tests/                      # Automated Bun test suite (25 unit/integration tests)
+│   └── demo.ts                     # Unified interactive CLI platform simulation
+├── docs/phases/                    # Complete pedagogical guides for all 8 phases
+│   ├── README.md                   # Phase index & learning guide
+│   ├── phase-1.md                  # Storage Abstraction & S3/R2 CAS
+│   ├── phase-2.md                  # Authoritative WAL Index Model
+│   ├── phase-3.md                  # Primary Node Engine (Packfile Ingestion)
+│   ├── phase-4.md                  # Replica Node Engine (304 Validation)
+│   ├── phase-5.md                  # Ephemeral Cold Materialization ("Cattle, not pets")
+│   ├── phase-6.md                  # Amortized Compaction (Trading Bandwidth for CPU)
+│   ├── phase-7.md                  # Stateless Consensus & Rendezvous Hashing
+│   └── phase-8.md                  # Origin Platform & Production Simulation
+├── plan.md                         # Detailed 8-phase implementation roadmap
+└── package.json                    # Scripts and dependencies
 ```
 
-### 1. The WAL Index Structure (`wal_index.json`)
-```json
-{
-  "repo_id": "demo-repo",
-  "version": 4,
-  "references": {
-    "refs/heads/main": "9f83b2...commit_sha",
-    "refs/heads/feature": "1a2b3c...commit_sha"
-  },
-  "packfiles": [
-    "wal/packs/base.pack",
-    "wal/packs/push-1.pack",
-    "wal/packs/push-2.pack"
-  ],
-  "last_compaction": "2026-09-25T12:00:00Z"
-}
+---
+
+## 🚦 Phase Roadmap & Documentation
+
+Each phase has its own detailed markdown guide covering the system design, code walkthrough, and trade-offs:
+
+| Phase | Module | Documentation Guide |
+| :--- | :--- | :--- |
+| **Phase 1** | **Storage Abstraction Layer** | [`docs/phases/phase-1.md`](file:///home/milan/Milan/Learning/git-at-any-scale/docs/phases/phase-1.md) |
+| **Phase 2** | **Authoritative WAL Index Model** | [`docs/phases/phase-2.md`](file:///home/milan/Milan/Learning/git-at-any-scale/docs/phases/phase-2.md) |
+| **Phase 3** | **Primary Node Engine & CAS Writes** | [`docs/phases/phase-3.md`](file:///home/milan/Milan/Learning/git-at-any-scale/docs/phases/phase-3.md) |
+| **Phase 4** | **Replica Node Engine & Sub-10ms 304** | [`docs/phases/phase-4.md`](file:///home/milan/Milan/Learning/git-at-any-scale/docs/phases/phase-4.md) |
+| **Phase 5** | **Ephemeral Cold Materialization** | [`docs/phases/phase-5.md`](file:///home/milan/Milan/Learning/git-at-any-scale/docs/phases/phase-5.md) |
+| **Phase 6** | **Amortized Compaction** | [`docs/phases/phase-6.md`](file:///home/milan/Milan/Learning/git-at-any-scale/docs/phases/phase-6.md) |
+| **Phase 7** | **Stateless Consensus & Rendezvous Hashing**| [`docs/phases/phase-7.md`](file:///home/milan/Milan/Learning/git-at-any-scale/docs/phases/phase-7.md) |
+| **Phase 8** | **Origin Platform & Unified Simulation CLI**| [`docs/phases/phase-8.md`](file:///home/milan/Milan/Learning/git-at-any-scale/docs/phases/phase-8.md) |
+
+---
+
+## 🎮 Running the System
+
+### 1. Unified Simulation CLI (`src/demo.ts`)
+
+#### Option A: In-Memory Fast Simulation (<1s)
+Runs an interactive 7-step cluster simulation with zero external network dependencies:
+```bash
+bun run demo
 ```
 
-### 2. Core Operational Flow
-1. **`PrimaryNode.push(ref_name, old_sha, new_sha, packfile_bytes)`:**
-   - Write packfile to local `.git/objects/pack/`.
-   - Upload packfile to `s3://<bucket>/<repo_id>/wal/packs/<hash>.pack`.
-   - Read current `wal_index.json` and its `ETag`.
-   - Prepare new index with updated ref and new packfile path.
-   - Execute conditional PUT: `PutObject(IfMatch=ETag)`. If failed, retry.
-2. **`ReplicaNode.sync_and_read(ref_name)`:**
-   - Execute `GetObject(IfNoneMatch=local_etag)`.
-   - If `304 Not Modified`: read ref from local disk.
-   - If `200 OK`: download missing packfiles into `.git/objects/pack/`, update `.git/refs/`, update `local_etag`.
+#### Option B: Live AWS S3 Simulation
+Runs the full 7-step simulation directly against your live AWS S3 bucket:
+```bash
+bun run demo:s3
+```
+
+**What the demo demonstrates:**
+1. **Cluster Topology Setup:** 3 storage nodes mapped deterministically via Rendezvous Hashing (HRW) with 0 SQL lookups.
+2. **Primary Ingestion:** Developer commits $\to$ bare repo receives objects (`receive.unpackLimit = 1`) $\to$ `.pack` streamed to S3 $\to$ `wal_index.json` committed via CAS (`If-Match`).
+3. **Read Replication & Sub-10ms 304:** Cold read downloads delta pack (HTTP 200); warm read returns **HTTP 304 Not Modified** with **0 bytes** downloaded!
+4. **Concurrent Push Contention:** Two writers race to commit to S3 $\to$ Writer B receives **HTTP 412 Precondition Failed** $\to$ auto-reloads and retries without locks or 3-Phase Commit.
+5. **Zero-Disk Cold Materialization:** An empty replica (0 bytes on disk) downloads the WAL and builds the full Git repo in milliseconds ("Cattle, not pets").
+6. **Amortized Compaction:** Primary repacks fragmented packfiles into 1 pack $\to$ Replicas download the pre-compacted pack with **0% replica CPU cost**.
+7. **Instant Failover:** Primary node crashes $\to$ Gateway instantly re-routes writes to the next node with **zero leader elections**.
+
+---
+
+### 2. Running Automated Tests
+
+Run all 25 unit and integration tests across all 8 phases:
+```bash
+bun test
+```
+
+---
+
+### 3. Individual Live AWS S3 Scripts
+
+You can also run phase-specific scripts directly against your AWS S3 bucket:
+```bash
+# Basic Primary Node write & S3 verification
+bun run test:s3
+
+# Replica sync & HTTP 304 cache validation
+bun run test:s3:replication
+
+# 0-byte cold start materialization & cache eviction
+bun run test:s3:materialize
+
+# Primary git repack & replica pruning
+bun run test:s3:compact
+
+# Primary node crash & instant rendezvous failover
+bun run test:s3:failover
+```
+
+---
+
+## ⚙️ Environment Configuration
+
+To run against real AWS S3, create a `.env` file in the project root:
+
+```ini
+AWS_ACCESS_KEY_ID="your_access_key_id"
+AWS_SECRET_ACCESS_KEY="your_secret_access_key"
+AWS_REGION="eu-north-1"
+AWS_S3_BUCKET="your-bucket-name"
+```
+
+*(If no `.env` is provided, `bun run demo` and `bun test` default to the ultra-fast in-memory mock storage layer seamlessly).*
+
