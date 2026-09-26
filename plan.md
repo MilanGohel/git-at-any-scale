@@ -56,7 +56,7 @@
 - [x] **Phase 8: Origin Platform & Production Fleet Simulation**
 - [x] **Phase 9: Single-Host Production Deployment on AWS EC2**
 - [x] **Phase 10: Serverless Architecture on AWS Lambda (Function URLs & S3)**
-- [ ] **Phase 11: Authentication & Access Control (Tokens, Basic Auth & Namespaces)**
+- [x] **Phase 11: Authentication & Access Control (Tokens, Basic Auth & Namespaces)**
 - [ ] **Phase 12: Asynchronous Serverless Compaction Worker (EventBridge / SQS + Lambda)**
 - [ ] **Phase 13: Minimalist Web UI & Repository Explorer ("Mini-GitHub")**
 - [ ] **Phase 14: Event-Driven Webhooks Engine for CI/CD**

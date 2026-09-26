@@ -15,6 +15,8 @@
 import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import { join, basename, resolve } from "node:path";
 import type { R2StorageInterface } from "../types/storage.ts";
+import type { AuthContext } from "../types/auth.ts";
+import { AuthStore } from "../auth/auth-store.ts";
 import { AwsS3Storage } from "../storage/aws-s3.ts";
 import { MockR2Storage } from "../storage/mock-r2.ts";
 import { WALIndex } from "../models/wal-index.ts";
@@ -25,6 +27,7 @@ export interface GitServerOptions {
   host?: string;
   storage: R2StorageInterface;
   dataDir?: string;
+  authStore?: AuthStore;
 }
 
 export class GitHttpServer {
@@ -32,6 +35,7 @@ export class GitHttpServer {
   public readonly host: string;
   public readonly storage: R2StorageInterface;
   public readonly reposDir: string;
+  public readonly authStore: AuthStore;
   private server?: ReturnType<typeof Bun.serve>;
 
   constructor(options: GitServerOptions) {
@@ -39,6 +43,7 @@ export class GitHttpServer {
     this.host = options.host || "0.0.0.0";
     this.storage = options.storage;
     this.reposDir = resolve(options.dataDir || process.env.GIT_DATA_DIR || "./.sim_data/ec2_server/repos");
+    this.authStore = options.authStore || new AuthStore(this.storage);
   }
 
   async start(): Promise<void> {
@@ -73,8 +78,30 @@ export class GitHttpServer {
    * Resolves the disk path for a repository.
    */
   private getRepoPath(repoId: string): string {
-    const sanitized = repoId.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const sanitized = repoId.replace(/[^a-zA-Z0-9_\-\/]/g, "_");
     return join(this.reposDir, `${sanitized}.git`);
+  }
+
+  /**
+   * Extracts credentials from HTTP Authorization Basic header.
+   */
+  private parseBasicAuth(req: Request): { username: string; token: string } | null {
+    const authHeader = req.headers.get("authorization");
+    if (!authHeader || !authHeader.startsWith("Basic ")) {
+      return null;
+    }
+    try {
+      const base64 = authHeader.slice(6).trim();
+      const decoded = Buffer.from(base64, "base64").toString("utf-8");
+      const colonIdx = decoded.indexOf(":");
+      if (colonIdx === -1) return null;
+      return {
+        username: decoded.slice(0, colonIdx),
+        token: decoded.slice(colonIdx + 1),
+      };
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -260,12 +287,18 @@ export class GitHttpServer {
 
     // Healthcheck endpoint
     if (pathname === "/health" || pathname === "/") {
+      const manifest = await this.authStore.getManifest().catch(() => undefined);
       return new Response(
         JSON.stringify({
           status: "healthy",
           server: "Continuity Git Server",
-          version: "1.0.0",
+          version: "1.1.0",
           storage: this.storage.constructor.name,
+          auth: {
+            enabled: Boolean(manifest && Object.keys(manifest.users).length > 0),
+            userCount: manifest ? Object.keys(manifest.users).length : 0,
+            repoCount: manifest ? Object.keys(manifest.repos).length : 0,
+          },
           timestamp: new Date().toISOString(),
         }),
         {
@@ -274,8 +307,8 @@ export class GitHttpServer {
       );
     }
 
-    // Match Git smart HTTP paths: /:repoId.git/...
-    const match = pathname.match(/^\/([a-zA-Z0-9_\-\.]+)\.git(\/.*)?$/);
+    // Match Git smart HTTP paths: /:repoId.git/... or /:owner/:repoId.git/...
+    const match = pathname.match(/^\/((?:[a-zA-Z0-9_\-\.]+\/)?[a-zA-Z0-9_\-\.]+)\.git(\/.*)?$/);
     if (!match) {
       return new Response("Not Found", { status: 404 });
     }
@@ -283,6 +316,36 @@ export class GitHttpServer {
     const repoId = match[1]!;
     const subpath = match[2] || "";
     const isWrite = pathname.includes("git-receive-pack") || url.search.includes("git-receive-pack");
+
+    // 1. Authenticate credentials if provided
+    const creds = this.parseBasicAuth(req);
+    let authContext: AuthContext | undefined;
+    if (creds) {
+      authContext = await this.authStore.authenticate(creds.username, creds.token);
+    }
+
+    // 2. Enforce Access Control Policy
+    const access = await this.authStore.checkAccess({
+      repoId,
+      isWrite,
+      authContext,
+    });
+
+    if (!access.allowed) {
+      if (access.status === 401) {
+        return new Response(access.reason, {
+          status: 401,
+          headers: {
+            "WWW-Authenticate": 'Basic realm="Continuity Git Server"',
+            "Content-Type": "text/plain",
+          },
+        });
+      }
+      return new Response(`Forbidden: ${access.reason}`, {
+        status: 403,
+        headers: { "Content-Type": "text/plain" },
+      });
+    }
 
     // Ensure repository exists on disk (or auto-materialize from S3)
     const exists = await this.ensureRepoReady(repoId, isWrite);
@@ -334,6 +397,18 @@ export class GitHttpServer {
     // If this was a successful push, upload the packfile to S3 and commit WAL via CAS!
     if (req.method === "POST" && pathname.includes("git-receive-pack") && proc.exitCode === 0) {
       await this.syncPushToS3(repoId, prePacks);
+
+      // Auto-assign repository ownership to authenticated user if newly created
+      if (authContext?.user) {
+        const manifest = await this.authStore.getManifest();
+        if (!manifest.repos[repoId]) {
+          await this.authStore.setRepoPolicy({
+            repoId,
+            owner: authContext.user.username,
+            visibility: "public",
+          }).catch(() => {});
+        }
+      }
     }
 
     return this.parseCgiResponse(cgiBytes);

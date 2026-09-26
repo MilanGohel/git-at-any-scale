@@ -14,6 +14,7 @@ export interface GitRunOptions {
 export async function runGit(args: string[], options: GitRunOptions = {}): Promise<string> {
   const env: Record<string, string> = {
     ...process.env,
+    GIT_TERMINAL_PROMPT: "0",
     GIT_AUTHOR_NAME: process.env.GIT_AUTHOR_NAME || "Continuity Engine",
     GIT_AUTHOR_EMAIL: process.env.GIT_AUTHOR_EMAIL || "engine@continuity.cursor.com",
     GIT_COMMITTER_NAME: process.env.GIT_COMMITTER_NAME || "Continuity Engine",
