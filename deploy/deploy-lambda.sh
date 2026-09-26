@@ -129,15 +129,23 @@ if [ -z "$FUNCTION_URL" ]; then
     --auth-type NONE \
     --region "$REGION" \
     --query 'FunctionUrl' --output text)
-
-  aws lambda add-permission \
-    --function-name "$FUNCTION_NAME" \
-    --statement-id FunctionURLAllowPublicAccess \
-    --action lambda:InvokeFunctionUrl \
-    --principal "*" \
-    --function-url-auth-type NONE \
-    --region "$REGION" > /dev/null 2>&1 || true
 fi
+
+# Ensure both InvokeFunctionUrl and InvokeFunction permissions are in place (required by AWS)
+aws lambda add-permission \
+  --function-name "$FUNCTION_NAME" \
+  --statement-id FunctionURLAllowPublicAccess \
+  --action lambda:InvokeFunctionUrl \
+  --principal "*" \
+  --function-url-auth-type NONE \
+  --region "$REGION" > /dev/null 2>&1 || true
+
+aws lambda add-permission \
+  --function-name "$FUNCTION_NAME" \
+  --statement-id AllowFunctionInvoke \
+  --action lambda:InvokeFunction \
+  --principal "*" \
+  --region "$REGION" > /dev/null 2>&1 || true
 
 echo ""
 echo "================================================================================"
