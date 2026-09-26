@@ -6,7 +6,8 @@
   "scripts": {
     "test": "bun test",
     "test:s3": "bun run src/scripts/test-real-s3.ts",
-    "test:s3:replication": "bun run src/scripts/test-real-s3-replication.ts"
+    "test:s3:replication": "bun run src/scripts/test-real-s3-replication.ts",
+    "test:s3:materialize": "bun run src/scripts/test-real-s3-materialize.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"

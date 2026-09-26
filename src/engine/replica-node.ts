@@ -1,4 +1,4 @@
-import { readdir, mkdir, rm } from "node:fs/promises";
+import { readdir, mkdir, rm, stat } from "node:fs/promises";
 import { join, basename } from "node:path";
 import type { R2StorageInterface } from "../types/storage.ts";
 import { WALIndex } from "../models/wal-index.ts";
@@ -12,6 +12,14 @@ export interface ReplicaSyncResult {
   latencyMs: number;
 }
 
+export interface MaterializeResult {
+  success: boolean;
+  version: number;
+  downloadedPacks: string[];
+  refsCount: number;
+  durationMs: number;
+}
+
 /**
  * Replica Node Engine in Cursor's Continuity architecture.
  *
@@ -22,6 +30,8 @@ export interface ReplicaSyncResult {
  * 3. On HTTP 304 Not Modified: Cache is fresh! Serves immediately from local NVMe (0 bytes downloaded).
  * 4. On HTTP 200 OK: Downloads only missing delta packfiles, generates .idx via `git index-pack`,
  *    and fast-forwards local branch references via `git update-ref`.
+ * 5. Ephemeral Cold Materialization ("Cattle, Not Pets"): If local disk is evicted or cold,
+ *    reconstructs the entire repository from S3 on-demand in milliseconds.
  */
 export class ReplicaNode {
   public readonly nodeId: string;
@@ -61,6 +71,88 @@ export class ReplicaNode {
   }
 
   /**
+   * Checks whether the repository is currently warm on local disk.
+   */
+  async isDiskWarm(): Promise<boolean> {
+    try {
+      const s = await stat(this.repoDir);
+      return s.isDirectory();
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Simulates cache eviction ("cattle, not pets").
+   * Completely removes the repository from local disk to free up resources.
+   */
+  async evictDisk(): Promise<void> {
+    await rm(this.repoDir, { recursive: true, force: true });
+    this.cachedIndex = undefined;
+    this.cachedETag = undefined;
+  }
+
+  /**
+   * Materializes the entire Git repository from AWS S3 on a cold node:
+   * 1. Fetches wal_index.json from S3.
+   * 2. Initializes a blank bare Git repository locally.
+   * 3. Streams all active packfiles from S3 and indexes them with git index-pack.
+   * 4. Reconstructs all Git branch references.
+   */
+  async materialize(): Promise<MaterializeResult> {
+    const startTime = performance.now();
+
+    // 1. Fetch WAL index from S3
+    const indexRes = await this.storage.getObject(this.indexKey);
+    if (indexRes.status !== 200 || !indexRes.data) {
+      throw new Error(`Cannot materialize: Repository '${this.repoId}' not found in S3 WAL`);
+    }
+
+    const walIndex = WALIndex.fromBytes(indexRes.data);
+
+    // 2. Initialize clean bare Git repository
+    await this.initRepo();
+    const packDir = join(this.repoDir, "objects", "pack");
+    await mkdir(packDir, { recursive: true });
+
+    // 3. Download and index all active packfiles
+    const downloadedPacks: string[] = [];
+    for (const packKey of walIndex.packfiles) {
+      const packFileName = basename(packKey);
+      const localPackPath = join(packDir, packFileName);
+
+      const packRes = await this.storage.getObject(packKey);
+      if (packRes.status !== 200 || !packRes.data) {
+        throw new Error(`Failed to download packfile ${packKey} during materialization`);
+      }
+
+      await Bun.write(localPackPath, packRes.data);
+      await runGit(["index-pack", localPackPath], { cwd: this.repoDir });
+      downloadedPacks.push(packFileName);
+    }
+
+    // 4. Reconstruct all Git branch references
+    for (const [refName, commitSha] of Object.entries(walIndex.references)) {
+      await runGit(["update-ref", refName, commitSha], { cwd: this.repoDir });
+      if (refName === "refs/heads/main" || refName === "refs/heads/master") {
+        await runGit(["symbolic-ref", "HEAD", refName], { cwd: this.repoDir });
+      }
+    }
+
+    this.cachedIndex = walIndex;
+    this.cachedETag = indexRes.etag;
+
+    const durationMs = Math.round((performance.now() - startTime) * 100) / 100;
+    return {
+      success: true,
+      version: walIndex.version,
+      downloadedPacks,
+      refsCount: Object.keys(walIndex.references).length,
+      durationMs,
+    };
+  }
+
+  /**
    * Discovers which .pack files already exist on the replica's local disk.
    */
   private async getLocalPackfiles(): Promise<Set<string>> {
@@ -75,19 +167,27 @@ export class ReplicaNode {
 
   /**
    * Synchronizes the replica before serving a read operation:
-   * 1. Issues a conditional GET (If-None-Match: cachedETag) against S3/R2.
-   * 2. If S3 returns 304: Local cache is up-to-date! Serves clone directly from NVMe.
-   * 3. If S3 returns 200: Downloads delta packfiles from S3, builds local .idx,
-   *    and advances local branch refs.
+   * 1. If disk is cold or evicted: automatically materializes from S3.
+   * 2. If disk is warm: issues a conditional GET (If-None-Match: cachedETag).
+   * 3. On 304: serves immediately from local NVMe.
+   * 4. On 200: downloads delta packfiles and advances local branch refs.
    */
   async syncForRead(): Promise<ReplicaSyncResult> {
     const startTime = performance.now();
 
-    // Ensure local bare repo directory exists
-    const localPacks = await this.getLocalPackfiles();
-    if (localPacks.size === 0 && !this.cachedIndex) {
-      await this.initRepo();
+    // Cold start / Evicted cache: Materialize directly from S3!
+    if (!(await this.isDiskWarm())) {
+      const mat = await this.materialize();
+      return {
+        cacheHit: false,
+        status: 200,
+        version: mat.version,
+        downloadedPacks: mat.downloadedPacks,
+        latencyMs: mat.durationMs,
+      };
     }
+
+    const localPacks = await this.getLocalPackfiles();
 
     // 1. Send conditional GET to S3/R2
     const getRes = await this.storage.getObject(this.indexKey, {

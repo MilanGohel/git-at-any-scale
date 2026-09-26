@@ -1,5 +1,5 @@
-import { readdir, mkdir, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { readdir, mkdir, rm, stat } from "node:fs/promises";
+import { join, basename } from "node:path";
 import type { R2StorageInterface } from "../types/storage.ts";
 import { WALIndex } from "../models/wal-index.ts";
 import { runGit } from "./git-process.ts";
@@ -64,6 +64,67 @@ export class PrimaryNode {
     // Forces Git to retain all incoming push objects as binary .pack files!
     await runGit(["config", "receive.unpackLimit", "1"], { cwd: this.repoDir });
     await runGit(["config", "transfer.unpackLimit", "1"], { cwd: this.repoDir });
+  }
+
+  /**
+   * Checks whether the repository is currently warm on local disk.
+   */
+  async isDiskWarm(): Promise<boolean> {
+    try {
+      const s = await stat(this.repoDir);
+      return s.isDirectory();
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Simulates cache eviction ("cattle, not pets").
+   * Completely removes the repository from local disk to free up resources.
+   */
+  async evictDisk(): Promise<void> {
+    await rm(this.repoDir, { recursive: true, force: true });
+    this.cachedIndex = undefined;
+    this.cachedETag = undefined;
+  }
+
+  /**
+   * Materializes the repository from S3/R2 WAL onto local disk.
+   */
+  async materialize(): Promise<void> {
+    const indexRes = await this.storage.getObject(this.indexKey);
+    if (indexRes.status !== 200 || !indexRes.data) {
+      throw new Error(`Cannot materialize: Repository '${this.repoId}' not found in S3 WAL`);
+    }
+
+    const walIndex = WALIndex.fromBytes(indexRes.data);
+    await this.initRepo();
+
+    const packDir = join(this.repoDir, "objects", "pack");
+    await mkdir(packDir, { recursive: true });
+
+    for (const packKey of walIndex.packfiles) {
+      const packFileName = basename(packKey);
+      const localPackPath = join(packDir, packFileName);
+
+      const packRes = await this.storage.getObject(packKey);
+      if (packRes.status !== 200 || !packRes.data) {
+        throw new Error(`Failed to download packfile ${packKey} during materialization`);
+      }
+
+      await Bun.write(localPackPath, packRes.data);
+      await runGit(["index-pack", localPackPath], { cwd: this.repoDir });
+    }
+
+    for (const [refName, commitSha] of Object.entries(walIndex.references)) {
+      await runGit(["update-ref", refName, commitSha], { cwd: this.repoDir });
+      if (refName === "refs/heads/main" || refName === "refs/heads/master") {
+        await runGit(["symbolic-ref", "HEAD", refName], { cwd: this.repoDir });
+      }
+    }
+
+    this.cachedIndex = walIndex;
+    this.cachedETag = indexRes.etag;
   }
 
   /**
