@@ -20,8 +20,9 @@
 5. [Act IV: Origin – The Platform for the Agentic Era](#-act-iv-origin--the-platform-for-the-agentic-era)
 6. [Act V: Our Working TypeScript + Bun Implementation](#️-act-v-our-working-typescript--bun-implementation)
 7. [Phase Roadmap & Documentation](#-phase-roadmap--documentation)
-8. [Running the System (CLI Demo & Tests)](#-running-the-system)
-9. [Environment Configuration](#️-environment-configuration)
+8. [Running the System (CLI Demo, Clone & Tests)](#-running-the-system)
+9. [How the Demo Works: Actual vs. Simulated Breakdown](#-how-the-demo-works-actual-vs-simulated-breakdown)
+10. [Environment Configuration](#️-environment-configuration)
 
 ---
 
@@ -371,7 +372,23 @@ bun test
 
 ---
 
-### 3. Individual Live AWS S3 Scripts
+### 3. Cloning Any Repository from AWS S3
+
+Standard Git (`git clone`) doesn't natively speak AWS S3. In Cursor's architecture, an empty node or developer runs the **Cold Materializer** to restore directly from S3 in milliseconds:
+
+```bash
+# Auto-detects the latest repository in your S3 bucket and clones it
+bun run clone
+
+# Or specify a specific repository ID and destination folder
+bun run clone repo-origin-1790426335617 ./my-cloned-repo
+```
+
+This streams the active `.pack` files from S3, generates local `.idx` indices with `git index-pack`, sets branch refs, and runs `git checkout -f main` so all project files are immediately editable on disk.
+
+---
+
+### 4. Individual Live AWS S3 Scripts
 
 You can also run phase-specific scripts directly against your AWS S3 bucket:
 ```bash
@@ -390,6 +407,64 @@ bun run test:s3:compact
 # Primary node crash & instant rendezvous failover
 bun run test:s3:failover
 ```
+
+---
+
+## 🔍 How the Demo Works: Actual vs. Simulated Breakdown
+
+When you run `bun run demo:s3`, what is actually happening in the cloud versus what is simulated on your local machine?
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        YOUR LOCAL MACHINE                              │
+│                                                                        │
+│   ┌────────────────────┐   Push Commit   ┌─────────────────────────┐   │
+│   │   Client Folder    │ ──────────────> │   Primary Node Folder   │   │
+│   │  (developer_repo)  │                 │ (node-eu-west-1_*.git)  │   │
+│   └────────────────────┘                 └────────────┬────────────┘   │
+│                                                       │                │
+│                                                       │ 1. Upload .pack│
+│                                                       │ 2. Atomic CAS  │
+│                                                       ▼                │
+│   ┌────────────────────────────────────────────────────────────────┐   │
+│   │                     AWS S3 CLOUD BUCKET                        │   │
+│   │           s3://git-at-any-scale/repo-origin-.../               │   │
+│   │           ├── wal_index.json (Version 8)                       │   │
+│   │           └── wal/packs/*.pack                                 │   │
+│   └────────────────────────────────────────────────────────────────┘   │
+│                       ▲                               ▲                │
+│                       │ 3. If-None-Match: ETag        │ 4. Download    │
+│                       │    (Returns HTTP 304!)        │    all packs   │
+│                       │                               │    from S3     │
+│         ┌─────────────┴───────────┐      ┌────────────┴────────────┐   │
+│         │   Replica Node 1 Disk   │      │   Replica Node 2 Disk   │   │
+│         │ (node-eu-west-2_*.git)  │      │ (node-eu-west-3_*.git)  │   │
+│         │  (Warm cache: 0 bytes)  │      │ (Cold start: was 0 KB)  │   │
+│         └─────────────────────────┘      └─────────────────────────┘   │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### ✅ What is 100% ACTUAL (Real Cloud & Git Operations)
+
+1. **Real AWS S3 Storage & Network Calls:**
+   - Every `.pack` binary file and `wal_index.json` manifest is sent over the public internet to your real AWS bucket via `@aws-sdk/client-s3`.
+2. **Real S3 Atomic Compare-And-Swap (CAS):**
+   - In Step 4, Writer B sends an `If-Match` header with an expired ETag. Amazon S3's servers evaluate the precondition and actively return a **real `HTTP 412 Precondition Failed`** error, proving that write serialization works without a database.
+3. **Real HTTP 304 Cache Validation:**
+   - When Replica 1 issues a conditional GET with its cached ETag, AWS S3 responds with **`HTTP 304 Not Modified`**. The replica downloads **0 bytes** of packfile data.
+4. **Real Native Git Bare Repositories:**
+   - Every node manages a real bare Git repo on local disk. Real Git processes (`git init --bare`, `git push`, `git index-pack`, `git repack -ad`, `git update-ref`, `git checkout`) are executed by Bun.
+5. **Zero Shared Memory:**
+   - Replica nodes **never read files from the Primary's directory**. Replicas receive 100% of their commits, trees, and blobs by pulling `.pack` files directly from AWS S3.
+
+### 🎭 What is SIMULATED (Local Process Topology)
+
+1. **Single-Process Orchestration:**
+   - In `src/demo.ts`, the 3 cluster nodes (`node-eu-west-1`, `node-eu-west-2`, `node-eu-west-3`) are simulated as separate TypeScript class instances within a single terminal process, rather than running as 3 separate physical EC2 virtual machines or background HTTP daemons on separate ports (e.g., `localhost:8001`, `localhost:8002`, `localhost:8003`).
+2. **Isolated Disk Folders:**
+   - Node separation is enforced via isolated disk paths on your machine (`.sim_data/demo_origin/fleet_nodes/<nodeId>_<repoId>.git`).
+3. **Failover Simulation:**
+   - In Step 7, node crash is simulated by removing `node-eu-west-1` from the router's active set, triggering the Rendezvous Hashing algorithm to deterministically re-route traffic to the next ranked node.
 
 ---
 
