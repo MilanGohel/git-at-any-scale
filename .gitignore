@@ -1,5 +1,6 @@
 node_modules/
 .sim_data/
+cloned_*/
 *.log
 .env
 .env.local
