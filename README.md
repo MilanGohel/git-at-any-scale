@@ -333,6 +333,7 @@ Each phase has its own detailed markdown guide covering the system design, code 
 | **Phase 6** | **Amortized Compaction** | [`docs/phases/phase-6.md`](file:///home/milan/Milan/Learning/git-at-any-scale/docs/phases/phase-6.md) |
 | **Phase 7** | **Stateless Consensus & Rendezvous Hashing**| [`docs/phases/phase-7.md`](file:///home/milan/Milan/Learning/git-at-any-scale/docs/phases/phase-7.md) |
 | **Phase 8** | **Origin Platform & Unified Simulation CLI**| [`docs/phases/phase-8.md`](file:///home/milan/Milan/Learning/git-at-any-scale/docs/phases/phase-8.md) |
+| **Phase 9** | **Single-Host EC2 Production Deployment**   | [`docs/phases/phase-9.md`](file:///home/milan/Milan/Learning/git-at-any-scale/docs/phases/phase-9.md) |
 
 ---
 
@@ -388,7 +389,43 @@ This streams the active `.pack` files from S3, generates local `.idx` indices wi
 
 ---
 
-### 4. Individual Live AWS S3 Scripts
+### 4. Running the Git Smart HTTP Server (Single-Host EC2 Hosting)
+
+To run as an actual Git HTTP hosting server where developers can run standard `git clone http://...` and `git push`:
+
+#### Run Locally or on EC2:
+```bash
+bun run serve
+```
+The server starts on port `3000`.
+
+#### Test with Standard Git CLI:
+```bash
+# 1. Clone a repository hosted on the server
+git clone http://localhost:3000/my-project.git
+
+# 2. Add commits and push back over HTTP
+cd my-project
+echo "Hello from Git CLI" >> README.md
+git add . && git commit -m "Update via HTTP"
+git push origin main
+```
+*On push, the server accepts the packfile stream, uploads the `.pack` to S3, and commits `wal_index.json` via Atomic CAS!*
+
+#### Deploy on EC2 via Docker Compose:
+```bash
+docker compose up -d
+```
+
+#### One-Click EC2 Host Setup (Systemd):
+```bash
+chmod +x deploy/setup-ec2.sh
+./deploy/setup-ec2.sh
+```
+
+---
+
+### 5. Individual Live AWS S3 Scripts
 
 You can also run phase-specific scripts directly against your AWS S3 bucket:
 ```bash

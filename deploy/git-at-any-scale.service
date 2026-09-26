@@ -1,0 +1,18 @@
+[Unit]
+Description=Git at Any Scale HTTP Server Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/git-at-any-scale
+EnvironmentFile=-/home/ubuntu/git-at-any-scale/.env
+Environment=PORT=3000
+Environment=GIT_DATA_DIR=/var/git-data/repos
+ExecStart=/home/ubuntu/.bun/bin/bun run src/server/git-http-server.ts
+Restart=always
+RestartSec=3
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

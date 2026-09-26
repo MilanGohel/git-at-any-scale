@@ -54,6 +54,7 @@
 - [x] **Phase 6: Amortized Compaction (Primary Repacks, Replicas Download)**
 - [x] **Phase 7: Stateless Consensus & Rendezvous Hashing**
 - [x] **Phase 8: Origin Platform & Production Fleet Simulation**
+- [x] **Phase 9: Single-Host Production Deployment on AWS EC2**
 
 ---
 
@@ -146,13 +147,28 @@
 
 ---
 
-### Phase 7: End-to-End Simulation & Multi-Node Verification
-* **Goal:** Create a visual, runnable test suite simulating a live cluster.
+### Phase 8: Origin Platform & Production Fleet Simulation
+* **Goal:** Create the unified production platform simulation and live cloud verification CLI.
 * **Components:**
   - `src/demo.ts`: CLI runner orchestrating:
-    - 1 Primary Node + 2 Replica Nodes.
-    - Multiple simulated developer pushes.
-    - HTTP 304 verification.
-    - Simulated concurrent CAS race (demonstrating 412 handling and retry).
-    - Eviction and instant cold-start recovery.
-* **Verification:** `bun run demo` runs cleanly and reports verified status at every step.
+    - 3-node topology via Rendezvous Hashing (HRW).
+    - Ingestion and Atomic S3 CAS.
+    - Sub-10ms HTTP 304 validation.
+    - Concurrent push collision & HTTP 412 resolution.
+    - Ephemeral cold-start materialization.
+    - Amortized compaction & replica pruning.
+    - Zero-election crash failover.
+  - `src/tests/origin-platform.test.ts`: Automated E2E verification test suite.
+* **Verification:** `bun run demo` (in-memory) and `bun run demo:s3` (live AWS S3) run with exit code 0.
+
+---
+
+### Phase 9: Single-Host Production Deployment on AWS EC2
+* **Goal:** Deploy the engine as a live Git Smart HTTP server on a single EC2 host, backed by AWS S3.
+* **Components:**
+  - `src/server/git-http-server.ts`: Native Git Smart HTTP server (`git-upload-pack` and `git-receive-pack`) via `Bun.serve`.
+  - Automatic on-demand cold materialization on clone/fetch.
+  - Automatic packfile extraction and S3 CAS commit on push.
+  - `Dockerfile` & `docker-compose.yml` for containerized single-host hosting.
+  - `deploy/setup-ec2.sh` for one-command Amazon Linux / Ubuntu bootstrap.
+* **Verification:** Run `git clone http://<ec2-ip>:3000/<repo>.git` and `git push` from standard local Git CLI.

@@ -1,0 +1,21 @@
+services:
+  git-server:
+    build: .
+    container_name: git-at-any-scale-server
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - GIT_DATA_DIR=/var/git-data/repos
+      - AWS_REGION=${AWS_REGION:-eu-north-1}
+      - AWS_S3_BUCKET=${AWS_S3_BUCKET:-git-at-any-scale}
+      # If running on an EC2 instance with an IAM Role, access keys are optional:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+    volumes:
+      # Ephemeral local cache on EC2 NVMe/EBS:
+      - git_cache_data:/var/git-data/repos
+
+volumes:
+  git_cache_data:
