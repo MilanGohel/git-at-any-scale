@@ -6,3 +6,4 @@ export * from "./types/wal.ts";
 export * from "./models/wal-index.ts";
 export * from "./engine/git-process.ts";
 export * from "./engine/primary-node.ts";
+export * from "./engine/replica-node.ts";

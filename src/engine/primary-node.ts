@@ -54,8 +54,8 @@ export class PrimaryNode {
     await rm(this.repoDir, { recursive: true, force: true });
     await mkdir(this.repoDir, { recursive: true });
 
-    // Initialize bare repository
-    await runGit(["init", "--bare", this.repoDir]);
+    // Initialize bare repository with main as default branch
+    await runGit(["init", "--bare", "-b", "main", this.repoDir]);
 
     // Ensure pushes are accepted on bare branches
     await runGit(["config", "receive.denyCurrentBranch", "ignore"], { cwd: this.repoDir });
