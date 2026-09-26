@@ -52,7 +52,8 @@
 - [x] **Phase 4: The Replica Node Engine (Conditional GET 304 & Delta Catchup)**
 - [x] **Phase 5: Ephemeral Cold-Start Materialization ("Cattle, Not Pets")**
 - [ ] **Phase 6: Amortized Compaction (Primary Repacks, Replicas Download)**
-- [ ] **Phase 7: End-to-End Simulation & Multi-Node Verification**
+- [ ] **Phase 7: Stateless Consensus & Rendezvous Hashing**
+- [ ] **Phase 8: Origin Platform & Production Fleet Simulation**
 
 ---
 
