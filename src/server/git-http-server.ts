@@ -319,8 +319,17 @@ export class GitHttpServer {
       stdin: req.body ? await req.arrayBuffer() : undefined,
     });
 
-    const cgiBytes = new Uint8Array(await new Response(proc.stdout).arrayBuffer());
+    const [cgiArrayBuffer, stderrText] = await Promise.all([
+      new Response(proc.stdout).arrayBuffer(),
+      new Response(proc.stderr).text().catch(() => ""),
+    ]);
+    const cgiBytes = new Uint8Array(cgiArrayBuffer);
     await proc.exited;
+
+    if (proc.exitCode !== 0 && cgiBytes.length === 0) {
+      console.error(`[CGI Error] git http-backend exited with code ${proc.exitCode}: ${stderrText}`);
+      return new Response(`Git CGI Error: ${stderrText}`, { status: 500 });
+    }
 
     // If this was a successful push, upload the packfile to S3 and commit WAL via CAS!
     if (req.method === "POST" && pathname.includes("git-receive-pack") && proc.exitCode === 0) {
