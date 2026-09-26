@@ -10,9 +10,9 @@ echo "==========================================================================
 echo " 🚀 DEPLOYING GIT AT ANY SCALE TO AWS LAMBDA (SERVERLESS)"
 echo "================================================================================"
 
-# Load environment variables from .env
+# Load environment variables from .env (stripping any accidental spaces around '=')
 if [ -f .env ]; then
-  export $(grep -v '^#' .env | xargs)
+  eval "$(sed 's/[[:space:]]*=[[:space:]]*/=/g' .env | grep -v '^#' | sed 's/^/export /')"
 fi
 
 REGION="${AWS_REGION:-eu-north-1}"
