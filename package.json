@@ -7,6 +7,7 @@
     "test": "bun test",
     "demo": "bun run src/demo.ts",
     "demo:s3": "bun run src/demo.ts --s3",
+    "clone": "bun run src/scripts/clone-from-s3.ts",
     "test:s3": "bun run src/scripts/test-real-s3.ts",
     "test:s3:replication": "bun run src/scripts/test-real-s3-replication.ts",
     "test:s3:materialize": "bun run src/scripts/test-real-s3-materialize.ts",
