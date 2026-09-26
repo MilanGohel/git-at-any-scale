@@ -47,7 +47,7 @@
 ## 🚦 Phase Checklist
 
 - [x] **Phase 1: Project Setup & Cloudflare R2 Storage Layer**
-- [ ] **Phase 2: The WAL Index Data Model & State Serialization**
+- [x] **Phase 2: The WAL Index Data Model & State Serialization**
 - [ ] **Phase 3: The Primary Node Engine (Packfile Ingestion & CAS Commit)**
 - [ ] **Phase 4: The Replica Node Engine (Conditional GET 304 & Delta Catchup)**
 - [ ] **Phase 5: Ephemeral Cold-Start Materialization ("Cattle, Not Pets")**
