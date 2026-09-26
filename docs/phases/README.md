@@ -17,3 +17,4 @@
 | **Phase 7** | [**Phase 7: Stateless Consensus & Routing**](./phase-7.md) | Rendezvous Hashing without SQL routing tables, handling leader failover & CAS push races. | ✅ Implemented & Tested |
 | **Phase 8** | [**Phase 8: Origin Platform & Production Fleet**](./phase-8.md) | Enterprise monorepo scale, S3 Express One Zone, history rewinding, and the unified simulation CLI. | ✅ Implemented & Tested |
 | **Phase 9** | [**Phase 9: Single-Host EC2 Deployment**](./phase-9.md) | Git Smart HTTP daemon on EC2, S3 durability, zero-data-loss ephemeral host recovery. | ✅ Implemented & Tested |
+| **Phase 10** | [**Phase 10: Serverless Lambda Architecture**](./phase-10.md) | Pure serverless Git on AWS Lambda, Function URLs, $0 idle cost, auto-scaling. | 🚀 Ready to Deploy |

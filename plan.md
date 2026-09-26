@@ -55,6 +55,7 @@
 - [x] **Phase 7: Stateless Consensus & Rendezvous Hashing**
 - [x] **Phase 8: Origin Platform & Production Fleet Simulation**
 - [x] **Phase 9: Single-Host Production Deployment on AWS EC2**
+- [x] **Phase 10: Serverless Architecture on AWS Lambda (Function URLs & S3)**
 
 ---
 
@@ -172,3 +173,14 @@
   - `Dockerfile` & `docker-compose.yml` for containerized single-host hosting.
   - `deploy/setup-ec2.sh` for one-command Amazon Linux / Ubuntu bootstrap.
 * **Verification:** Run `git clone http://<ec2-ip>:3000/<repo>.git` and `git push` from standard local Git CLI.
+
+---
+
+### Phase 10: Serverless Architecture on AWS Lambda (Function URLs & S3)
+* **Goal:** Migrate from dedicated EC2 virtual machines to pure serverless execution on AWS Lambda for $0 idle cost and auto-scaling.
+* **Components:**
+  - `Dockerfile.lambda`: Containerized Lambda image with Bun, native Git, and official AWS Lambda Web Adapter (`aws-lambda-adapter`).
+  - Ephemeral `/tmp` caching (512MB-10GB) with Phase 5 cold materialization.
+  - Lambda Function URLs with Response Streaming for 15-minute timeouts and binary packfile streaming.
+  - `deploy/deploy-lambda.sh`: Automated deployment script creating ECR repository, IAM role, and Lambda Function URL.
+* **Verification:** `git clone https://<lambda-id>.lambda-url.<region>.on.aws/<repo>.git` and `git push` directly against serverless endpoint.

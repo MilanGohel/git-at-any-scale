@@ -8,6 +8,7 @@
     "demo": "bun run src/demo.ts",
     "demo:s3": "bun run src/demo.ts --s3",
     "serve": "bun run src/server/git-http-server.ts",
+    "deploy:lambda": "bash deploy/deploy-lambda.sh",
     "clone": "bun run src/scripts/clone-from-s3.ts",
     "test:s3": "bun run src/scripts/test-real-s3.ts",
     "test:s3:replication": "bun run src/scripts/test-real-s3-replication.ts",

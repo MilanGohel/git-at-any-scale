@@ -334,6 +334,7 @@ Each phase has its own detailed markdown guide covering the system design, code 
 | **Phase 7** | **Stateless Consensus & Rendezvous Hashing**| [`docs/phases/phase-7.md`](file:///home/milan/Milan/Learning/git-at-any-scale/docs/phases/phase-7.md) |
 | **Phase 8** | **Origin Platform & Unified Simulation CLI**| [`docs/phases/phase-8.md`](file:///home/milan/Milan/Learning/git-at-any-scale/docs/phases/phase-8.md) |
 | **Phase 9** | **Single-Host EC2 Production Deployment**   | [`docs/phases/phase-9.md`](file:///home/milan/Milan/Learning/git-at-any-scale/docs/phases/phase-9.md) |
+| **Phase 10**| **Serverless Architecture on AWS Lambda**   | [`docs/phases/phase-10.md`](file:///home/milan/Milan/Learning/git-at-any-scale/docs/phases/phase-10.md) |
 
 ---
 
@@ -425,7 +426,31 @@ chmod +x deploy/setup-ec2.sh
 
 ---
 
-### 5. Individual Live AWS S3 Scripts
+### 5. Serverless Deployment on AWS Lambda ($0 Idle Cost)
+
+Instead of paying for an EC2 server running 24/7, deploy as a **100% serverless** Git platform on AWS Lambda with a public Function URL:
+
+#### One-Click Lambda Deployment:
+```bash
+bun run deploy:lambda
+```
+*(or `./deploy/deploy-lambda.sh`)*
+
+**What it does automatically:**
+1. Builds a container image with Bun, native Git, and the official AWS Lambda Web Adapter (`Dockerfile.lambda`).
+2. Pushes the image to your Amazon ECR repository.
+3. Deploys an AWS Lambda function with 2GB `/tmp` ephemeral cache and a 15-minute timeout.
+4. Generates a free HTTPS **Lambda Function URL** (with streaming response mode enabled).
+5. Output:
+   ```bash
+   git clone https://<lambda-id>.lambda-url.eu-north-1.on.aws/my-repo.git
+   git push origin main
+   ```
+*Idle cost: **$0.00 / month** (scales to 0 when no one is pushing or cloning).*
+
+---
+
+### 6. Individual Live AWS S3 Scripts
 
 You can also run phase-specific scripts directly against your AWS S3 bucket:
 ```bash

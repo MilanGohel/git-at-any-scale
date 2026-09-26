@@ -1,0 +1,31 @@
+# AWS Lambda Container with Bun, Git, and AWS Lambda Web Adapter
+FROM oven/bun:1.2-alpine
+
+# Install native Git (required for git http-backend) and bash
+RUN apk add --no-cache git bash ca-certificates
+
+# Install official AWS Lambda Web Adapter
+# This extension bridges AWS Lambda events directly to our Bun HTTP server on port 3000
+COPY --from=public.ecr.aws/awslabs/aws-lambda-web-adapter:0.8.4 /lambda-adapter /opt/extensions/lambda-adapter
+
+WORKDIR /app
+
+# Install dependencies
+COPY package.json bun.lock* ./
+RUN bun install --frozen-lockfile || bun install
+
+# Copy application source code
+COPY . .
+
+# Configure Lambda environment
+# /tmp is the only writable directory in AWS Lambda (up to 10 GB)
+ENV PORT=3000
+ENV AWS_LWA_PORT=3000
+ENV GIT_DATA_DIR=/tmp/repos
+ENV AWS_LWA_ASYNC_INIT=true
+ENV AWS_LWA_READINESS_CHECK_PATH=/health
+
+EXPOSE 3000
+
+# Start Git Smart HTTP server daemon
+CMD ["bun", "run", "src/server/git-http-server.ts"]
