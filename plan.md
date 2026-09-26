@@ -56,6 +56,12 @@
 - [x] **Phase 8: Origin Platform & Production Fleet Simulation**
 - [x] **Phase 9: Single-Host Production Deployment on AWS EC2**
 - [x] **Phase 10: Serverless Architecture on AWS Lambda (Function URLs & S3)**
+- [ ] **Phase 11: Authentication & Access Control (Tokens, Basic Auth & Namespaces)**
+- [ ] **Phase 12: Asynchronous Serverless Compaction Worker (EventBridge / SQS + Lambda)**
+- [ ] **Phase 13: Minimalist Web UI & Repository Explorer ("Mini-GitHub")**
+- [ ] **Phase 14: Event-Driven Webhooks Engine for CI/CD**
+- [ ] **Phase 15: Global Edge Caching & Custom Domain (CloudFront + ACM)**
+- [ ] **Phase 16: Repository Lifecycle Management & Admin REST API**
 
 ---
 
@@ -184,3 +190,83 @@
   - Lambda Function URLs with Response Streaming for 15-minute timeouts and binary packfile streaming.
   - `deploy/deploy-lambda.sh`: Automated deployment script creating ECR repository, IAM role, and Lambda Function URL.
 * **Verification:** `git clone https://<lambda-id>.lambda-url.<region>.on.aws/<repo>.git` and `git push` directly against serverless endpoint.
+
+---
+
+### Phase 11: Authentication & Access Control (Tokens, Basic Auth & Namespaces)
+* **Goal:** Secure the serverless Git server with Personal Access Tokens (PATs), HTTP Basic Authentication, and multi-tenant repository namespaces.
+* **Why it matters:** Currently, the Lambda Function URL allows unauthenticated public reads and writes. Enterprise and personal hosting require credential validation and scoped permissions.
+* **Components:**
+  - `src/auth/token-manager.ts`: Secure token hashing (PBKDF2/SHA-256), token generation (`pat_...`), and validation.
+  - Persistent Auth Store: Stored in S3 (`/auth/users.json`) or AWS DynamoDB table (`git-users`) mapping usernames, token hashes, and repository permissions.
+  - HTTP Basic Auth Middleware in `GitHttpServer`: Parses `Authorization: Basic <base64>`, validates credentials against the auth store, and enforces Read vs. Write permissions.
+  - Scoped Namespaces: Support `/:owner/:repo.git` (e.g. `/milan/ondc-scrapper.git`) with private vs. public visibility flags.
+* **Verification:** Unauthenticated `git clone` or `git push` on private repositories returns `401 Unauthorized`; pushing with a valid PAT succeeds; non-owners are rejected.
+
+---
+
+### Phase 12: Asynchronous Serverless Compaction Worker (EventBridge / SQS + Lambda)
+* **Goal:** Offload repository compaction from interactive `git push` requests to an asynchronous background Lambda worker.
+* **Why it matters:** As repositories grow in commit depth, `git repack` takes seconds or minutes. Running it synchronously on push blocks the developer. Asynchronous compaction keeps pushes sub-second while maintaining S3 storage hygiene.
+* **Components:**
+  - `src/server/events.ts`: Event publisher that checks packfile fragmentation after each push and emits a `RepoCompactionNeeded` event when `packfiles.length >= 5`.
+  - AWS EventBridge / SQS Queue: Decouples push ingestion from background maintenance.
+  - `src/workers/compaction-worker.ts`: Dedicated Lambda function handler invoked by SQS/EventBridge:
+    1. Downloads all uncompacted `.pack` files from S3 into `/tmp`.
+    2. Runs `git repack -ad` to produce a single consolidated packfile.
+    3. Streams the unified packfile to S3 (`<repo>/wal/compacted/<sha>.pack`).
+    4. Commits the new index via Atomic CAS with `If-Match`.
+* **Verification:** Push 5 commits consecutively, verify synchronous push finishes instantly, verify EventBridge triggers worker, and verify `wal_index.json` consolidates to 1 packfile.
+
+---
+
+### Phase 13: Minimalist Web UI & Repository Explorer ("Mini-GitHub")
+* **Goal:** Provide a sleek, lightweight browser interface to inspect repositories, view files, render READMEs, and browse commit logs.
+* **Why it matters:** Transforms the engine from a headless Git pipe into a complete developer platform accessible directly from any web browser without external tooling.
+* **Components:**
+  - Web UI routes in `src/server/git-http-server.ts`:
+    - `GET /:repoId` — Repository overview with file tree and rendered `README.md`.
+    - `GET /:repoId/tree/:branch/:path*` — Subdirectory tree browser.
+    - `GET /:repoId/blob/:branch/:path*` — Code viewer with syntax highlighting and line numbers.
+    - `GET /:repoId/commits` — Visual commit history and author information.
+  - HTML templating with zero client bundle overhead (server-side rendered HTML using Bun).
+  - Native Git tree extraction via `git ls-tree`, `git show`, and `git log`.
+* **Verification:** Open `https://<lambda-url>/lambda-demo` in a browser, view the rendered README and file directory, and click into commits.
+
+---
+
+### Phase 14: Event-Driven Webhooks Engine for CI/CD
+* **Goal:** Enable serverless webhooks to trigger external build runners, Discord/Slack notifications, or CI/CD pipelines on push.
+* **Why it matters:** Allows developers to use Git-at-Any-Scale as their primary remote for automated deployments and continuous integration.
+* **Components:**
+  - `src/webhooks/webhook-dispatcher.ts`: Dispatches signed HTTP POST requests (`X-Hub-Signature-256`) to registered webhook URLs.
+  - Config storage in S3 (`<repo>/webhooks.json`): List of target URLs, secrets, and event triggers (push, tag, branch creation).
+  - Event payload containing repo ID, branch, commit SHA, committer details, and commit messages.
+* **Verification:** Configure a webhook endpoint (e.g. `webhook.site`), perform a `git push`, and verify the received payload and cryptographic signature.
+
+---
+
+### Phase 15: Global Edge Caching & Custom Domain (CloudFront + ACM)
+* **Goal:** Front the Lambda Function URL with an Amazon CloudFront distribution, custom domain (e.g. `git.yourdomain.com`), and global edge caching for immutable Git objects.
+* **Why it matters:** Provides professional branding, eliminates AWS-generated URLs, and reduces clone latency across the globe by caching immutable packfiles at edge PoPs.
+* **Components:**
+  - CloudFront Distribution configured with:
+    - Origin: Lambda Function URL.
+    - Cache Behavior for `/objects/pack/*`: Cache TTL 1 year (immutable objects).
+    - Cache Behavior for `/info/refs`: No-cache / pass-through.
+    - Cache Behavior for `POST *`: Pass-through.
+  - AWS ACM SSL/TLS certificate for custom domain.
+  - Route 53 / DNS CNAME alias.
+* **Verification:** `git clone https://git.yourdomain.com/repo.git` succeeds with CloudFront `X-Cache: Hit from cloudfront` on subsequent fetches.
+
+---
+
+### Phase 16: Repository Lifecycle Management & Admin REST API
+* **Goal:** Add RESTful admin APIs to programmatically create, list, archive, and delete repositories.
+* **Why it matters:** Needed for platform administrators and automated agent orchestration (e.g. AI agents provisioning disposable repos programmatically).
+* **Components:**
+  - `POST /api/v1/repos` — Create a new repository with optional template / initial README.
+  - `GET /api/v1/repos` — List all repositories with disk size, commit count, and last active timestamp.
+  - `DELETE /api/v1/repos/:id` — Safely delete all packfiles and WAL index from S3 with protection against accidental deletion.
+  - `POST /api/v1/repos/:id/fork` — Copy-on-write or instant fork creation in S3.
+* **Verification:** Automated tests creating repos via API, verifying existence in S3, and deleting them cleanly.
