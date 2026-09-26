@@ -93,6 +93,7 @@ if aws lambda get-function --function-name "$FUNCTION_NAME" --region "$REGION" >
     --function-name "$FUNCTION_NAME" \
     --image-uri "$ECR_URI:latest" \
     --region "$REGION" > /dev/null
+  aws lambda wait function-updated --function-name "$FUNCTION_NAME" --region "$REGION" 2>/dev/null || true
   echo "  - Updating existing function configuration..."
   aws lambda update-function-configuration \
     --function-name "$FUNCTION_NAME" \
