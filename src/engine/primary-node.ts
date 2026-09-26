@@ -12,6 +12,14 @@ export interface IngestPushResult {
   newPackfiles: string[];
 }
 
+export interface CompactResult {
+  success: boolean;
+  version: number;
+  compactedPackKey: string;
+  previousPacksCount: number;
+  etag: string;
+}
+
 /**
  * Primary Node Engine in Cursor's Continuity architecture.
  *
@@ -259,5 +267,65 @@ export class PrimaryNode {
     }
 
     throw new Error(`Exhausted retries attempting to ingest push for ${this.repoId}`);
+  }
+
+  /**
+   * Executes Amortized Compaction on the Primary Node:
+   * 1. Runs git repack -ad locally on NVMe to merge loose objects and packs into 1 single pack.
+   * 2. Uploads the single compacted packfile to S3/R2 (wal/compacted/pack-xxx.pack).
+   * 3. Updates wal_index.json via Atomic CAS, replacing the list of fragmented packfiles
+   *    with the single compacted packfile key.
+   */
+  async compact(): Promise<CompactResult> {
+    const packDir = join(this.repoDir, "objects", "pack");
+
+    // 1. Run git repack -ad locally
+    await runGit(["repack", "-ad"], { cwd: this.repoDir });
+
+    // 2. Discover the new unified packfile
+    const currentPacks = await this.getExistingPackfiles();
+    if (currentPacks.size === 0) {
+      throw new Error(`Compaction failed: No packfile found after git repack in ${this.repoDir}`);
+    }
+
+    const compactedPackName = Array.from(currentPacks)[0]!;
+    const localPackPath = join(packDir, compactedPackName);
+    const packBytes = await Bun.file(localPackPath).bytes();
+    const s3Key = `${this.repoId}/wal/compacted/${compactedPackName}`;
+
+    // 3. Upload compacted pack to S3/R2
+    const putPackRes = await this.storage.putObject(s3Key, packBytes);
+    if (putPackRes.status !== 200) {
+      throw new Error(`Failed to upload compacted packfile to S3/R2: ${putPackRes.error}`);
+    }
+
+    // 4. Update wal_index.json via Atomic CAS
+    const getRes = await this.storage.getObject(this.indexKey);
+    if (getRes.status !== 200 || !getRes.data) {
+      throw new Error(`Failed to fetch WAL index before compaction commit for ${this.repoId}`);
+    }
+
+    const curIndex = WALIndex.fromBytes(getRes.data);
+    const previousPacksCount = curIndex.packfiles.length;
+    const nextIndex = curIndex.withCompaction(s3Key);
+
+    const casRes = await this.storage.putObject(this.indexKey, nextIndex.toBytes(), {
+      ifMatch: getRes.etag!,
+    });
+
+    if (casRes.status !== 200) {
+      throw new Error(`Failed to commit compaction via CAS: ${casRes.error}`);
+    }
+
+    this.cachedIndex = nextIndex;
+    this.cachedETag = casRes.etag;
+
+    return {
+      success: true,
+      version: nextIndex.version,
+      compactedPackKey: s3Key,
+      previousPacksCount,
+      etag: casRes.etag!,
+    };
   }
 }

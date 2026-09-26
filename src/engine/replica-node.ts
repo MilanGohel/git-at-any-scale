@@ -233,6 +233,19 @@ export class ReplicaNode {
         }
       }
 
+      // If a compaction occurred, prune local packfiles and index files no longer in S3 manifest
+      if (latestIndex.lastCompactedVersion > (this.cachedIndex?.lastCompactedVersion ?? 0)) {
+        const activePackNames = new Set(latestIndex.packfiles.map((p) => basename(p)));
+        const allLocalFiles = await readdir(packDir);
+        for (const file of allLocalFiles) {
+          if (file.endsWith(".pack") && !activePackNames.has(file)) {
+            await rm(join(packDir, file), { force: true });
+            const idxFile = file.replace(/\.pack$/, ".idx");
+            await rm(join(packDir, idxFile), { force: true });
+          }
+        }
+      }
+
       // Fast-forward local references to match the authoritative WAL index
       for (const [refName, commitSha] of Object.entries(latestIndex.references)) {
         await runGit(["update-ref", refName, commitSha], { cwd: this.repoDir });

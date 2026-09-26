@@ -51,7 +51,7 @@
 - [x] **Phase 3: The Primary Node Engine (Packfile Ingestion & CAS Commit)**
 - [x] **Phase 4: The Replica Node Engine (Conditional GET 304 & Delta Catchup)**
 - [x] **Phase 5: Ephemeral Cold-Start Materialization ("Cattle, Not Pets")**
-- [ ] **Phase 6: Amortized Compaction (Primary Repacks, Replicas Download)**
+- [x] **Phase 6: Amortized Compaction (Primary Repacks, Replicas Download)**
 - [ ] **Phase 7: Stateless Consensus & Rendezvous Hashing**
 - [ ] **Phase 8: Origin Platform & Production Fleet Simulation**
 
