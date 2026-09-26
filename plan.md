@@ -53,7 +53,7 @@
 - [x] **Phase 5: Ephemeral Cold-Start Materialization ("Cattle, Not Pets")**
 - [x] **Phase 6: Amortized Compaction (Primary Repacks, Replicas Download)**
 - [x] **Phase 7: Stateless Consensus & Rendezvous Hashing**
-- [ ] **Phase 8: Origin Platform & Production Fleet Simulation**
+- [x] **Phase 8: Origin Platform & Production Fleet Simulation**
 
 ---
 

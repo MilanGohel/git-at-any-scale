@@ -83,4 +83,14 @@ export class RendezvousRouter {
     const ranked = this.getRankedNodes(repoId).slice(1);
     return count !== undefined ? ranked.slice(0, count) : ranked;
   }
+
+  /**
+   * Returns the full cluster topology (Primary and Replicas) for a repository.
+   */
+  getTopology(repoId: string): { primary: string; replicas: string[] } {
+    return {
+      primary: this.getPrimary(repoId),
+      replicas: this.getReplicas(repoId),
+    };
+  }
 }
