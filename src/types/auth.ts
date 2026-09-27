@@ -18,7 +18,8 @@ export interface PersonalAccessToken {
 }
 
 export interface UserAccount {
-  username: string; // e.g., "milan"
+  username: string; 
+  email?: string; 
   role: "admin" | "user";
   tokens: PersonalAccessToken[];
   createdAt: string;

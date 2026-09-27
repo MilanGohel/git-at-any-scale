@@ -254,10 +254,10 @@ export class AuthStore {
   /**
    * Registers a user account.
    */
-  async createUser(username: string, role: "admin" | "user" = "user"): Promise<UserAccount> {
+  async createUser(username: string, role: "admin" | "user" = "user", email?: string): Promise<UserAccount> {
     const key = username.toLowerCase().trim();
-    if (!/^[a-zA-Z0-9_-]+$/.test(key)) {
-      throw new Error(`Invalid username '${username}'. Allowed: alphanumeric, hyphens, and underscores.`);
+    if (!/^[a-zA-Z0-9_.-]+$/.test(key)) {
+      throw new Error(`Invalid username '${username}'. Allowed: alphanumeric, dots, hyphens, and underscores.`);
     }
 
     const manifest = await this.getManifest();
@@ -268,6 +268,7 @@ export class AuthStore {
     const now = new Date().toISOString();
     const user: UserAccount = {
       username: key,
+      email: email?.trim(),
       role,
       tokens: [],
       createdAt: now,
@@ -356,6 +357,14 @@ export class AuthStore {
     manifest.repos[params.repoId] = policy;
     await this.saveManifest(manifest);
     return policy;
+  }
+
+  /**
+   * Fetches a user by username.
+   */
+  async getUser(username: string): Promise<UserAccount | undefined> {
+    const manifest = await this.getManifest();
+    return manifest.users[username.toLowerCase().trim()];
   }
 
   /**

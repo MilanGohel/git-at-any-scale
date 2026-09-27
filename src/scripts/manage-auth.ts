@@ -41,6 +41,29 @@ function getStorage(): R2StorageInterface {
   return new MockR2Storage();
 }
 
+async function getServerUrl(): Promise<string> {
+  if (process.env.GIT_SERVER_URL) {
+    return process.env.GIT_SERVER_URL.replace(/\/+$/, "");
+  }
+  if (process.env.LAMBDA_FUNCTION_URL) {
+    return process.env.LAMBDA_FUNCTION_URL.replace(/\/+$/, "");
+  }
+  // Try fetching dynamically from AWS CLI
+  try {
+    const region = process.env.AWS_REGION || "eu-north-1";
+    const functionName = process.env.FUNCTION_NAME || "git-at-any-scale";
+    const proc = Bun.spawn(
+      ["aws", "lambda", "get-function-url-config", "--function-name", functionName, "--region", region, "--query", "FunctionUrl", "--output", "text"],
+      { stdout: "pipe", stderr: "pipe" }
+    );
+    const url = (await new Response(proc.stdout).text()).trim();
+    if (url && url.startsWith("https://")) {
+      return url.replace(/\/+$/, "");
+    }
+  } catch {}
+  return "https://rzhan3v3qlbpnoy2xh2qdpluuq0trsop.lambda-url.eu-north-1.on.aws";
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const command = args[0];
@@ -57,12 +80,14 @@ async function main() {
     case "add-user": {
       const username = args[1];
       if (!username) {
-        console.error(`${C.red}Error: Missing username. Usage: add-user <username> [--admin]${C.reset}`);
+        console.error(`${C.red}Error: Missing username. Usage: add-user <username> [--email <email>] [--admin]${C.reset}`);
         process.exit(1);
       }
+      const emailIdx = args.indexOf("--email");
+      const email = emailIdx !== -1 && args[emailIdx + 1] ? args[emailIdx + 1]! : undefined;
       const isAdmin = args.includes("--admin");
-      const user = await authStore.createUser(username, isAdmin ? "admin" : "user");
-      console.log(`${C.green}✔ User '${user.username}' created successfully! Role: ${user.role}${C.reset}`);
+      const user = await authStore.createUser(username, isAdmin ? "admin" : "user", email);
+      console.log(`${C.green}✔ User '${user.username}' created successfully! Role: ${user.role}${user.email ? ` (Email: ${user.email})` : ""}${C.reset}`);
       break;
     }
 
@@ -91,18 +116,69 @@ async function main() {
         expiresInDays: days,
       });
 
+      const serverUrl = await getServerUrl();
+
       console.log(`\n================================================================================`);
       console.log(`${C.green}${C.bold} 🎉 PERSONAL ACCESS TOKEN GENERATED FOR '${username}'${C.reset}`);
       console.log(`================================================================================`);
+      console.log(`  User:       ${username}`);
       console.log(`  Token ID:   ${token.id}`);
       console.log(`  Name:       ${token.name}`);
       console.log(`  Scopes:     ${token.scopes.join(", ")}`);
       console.log(`  Expires:    ${token.expiresAt || "Never"}`);
       console.log(`\n  ${C.yellow}${C.bold}Secret Token (Save this! It will NOT be shown again):${C.reset}`);
       console.log(`  ${C.cyan}${C.bold}${rawToken}${C.reset}\n`);
-      console.log(`Usage with Git CLI:`);
-      console.log(`  git clone https://${username}:${rawToken}@<server-host>/<repo>.git`);
+      console.log(`Usage with Git CLI (Direct Token Path — Recommended for AWS Lambda):`);
+      console.log(`  git clone ${serverUrl}/t/${rawToken}/<repo>.git`);
+      console.log(`  git push  ${serverUrl}/t/${rawToken}/<repo>.git main`);
+      console.log(`\nUsage with Git HTTP Basic Auth:`);
+      console.log(`  git clone https://${username}:${rawToken}@${serverUrl.replace(/^https?:\/\//, "")}/<repo>.git`);
       console.log(`================================================================================\n`);
+      break;
+    }
+
+    case "batch-create": {
+      const inputs = args.slice(1).filter((a) => !a.startsWith("--"));
+      if (inputs.length === 0) {
+        console.error(`${C.red}Error: Usage: batch-create <email1> <email2> ...${C.reset}`);
+        process.exit(1);
+      }
+      const serverUrl = await getServerUrl();
+      const results: { username: string; email?: string; token: string }[] = [];
+
+      for (const input of inputs) {
+        let username = input;
+        let email: string | undefined;
+        if (input.includes("@")) {
+          email = input.trim();
+          username = input.split("@")[0]!.trim();
+        }
+
+        // Create user if not exists
+        try {
+          await authStore.createUser(username, "user", email);
+        } catch {
+          // User already exists, continue
+        }
+
+        const { rawToken } = await authStore.createTokenForUser({
+          username,
+          tokenName: "Team Access Key",
+          scopes: ["read", "write"],
+        });
+
+        results.push({ username, email, token: rawToken });
+      }
+
+      console.log(`\n================================================================================`);
+      console.log(`${C.green}${C.bold} 🎉 BATCH TEAM TOKENS GENERATED (${results.length} USERS)${C.reset}`);
+      console.log(`================================================================================`);
+      for (const r of results) {
+        console.log(`\n${C.bold}User:${C.reset}  ${C.cyan}${r.username}${C.reset} ${r.email ? `(${r.email})` : ""}`);
+        console.log(`Token: ${C.yellow}${r.token}${C.reset}`);
+        console.log(`Clone: ${serverUrl}/t/${r.token}/<repo-name>.git`);
+      }
+      console.log(`\n================================================================================\n`);
       break;
     }
 
@@ -189,6 +265,9 @@ ${C.bold}Commands:${C.reset}
 
   create-token <username> --name "Key Name" [--scopes read,write,admin] [--days 90]
       Generates a Personal Access Token (PAT) for the user.
+
+  batch-create <email1> <email2> ...
+      Registers multiple users from email addresses and generates tokens for each.
 
   revoke-token <username> <tokenId>
       Revokes an existing access token.
