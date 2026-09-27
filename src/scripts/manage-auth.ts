@@ -137,51 +137,6 @@ async function main() {
       break;
     }
 
-    case "batch-create": {
-      const inputs = args.slice(1).filter((a) => !a.startsWith("--"));
-      if (inputs.length === 0) {
-        console.error(`${C.red}Error: Usage: batch-create <email1> <email2> ...${C.reset}`);
-        process.exit(1);
-      }
-      const serverUrl = await getServerUrl();
-      const results: { username: string; email?: string; token: string }[] = [];
-
-      for (const input of inputs) {
-        let username = input;
-        let email: string | undefined;
-        if (input.includes("@")) {
-          email = input.trim();
-          username = input.split("@")[0]!.trim();
-        }
-
-        // Create user if not exists
-        try {
-          await authStore.createUser(username, "user", email);
-        } catch {
-          // User already exists, continue
-        }
-
-        const { rawToken } = await authStore.createTokenForUser({
-          username,
-          tokenName: "Team Access Key",
-          scopes: ["read", "write"],
-        });
-
-        results.push({ username, email, token: rawToken });
-      }
-
-      console.log(`\n================================================================================`);
-      console.log(`${C.green}${C.bold} 🎉 BATCH TEAM TOKENS GENERATED (${results.length} USERS)${C.reset}`);
-      console.log(`================================================================================`);
-      for (const r of results) {
-        console.log(`\n${C.bold}User:${C.reset}  ${C.cyan}${r.username}${C.reset} ${r.email ? `(${r.email})` : ""}`);
-        console.log(`Token: ${C.yellow}${r.token}${C.reset}`);
-        console.log(`Clone: ${serverUrl}/t/${r.token}/<repo-name>.git`);
-      }
-      console.log(`\n================================================================================\n`);
-      break;
-    }
-
     case "revoke-token": {
       const username = args[1];
       const tokenId = args[2];
@@ -265,9 +220,6 @@ ${C.bold}Commands:${C.reset}
 
   create-token <username> --name "Key Name" [--scopes read,write,admin] [--days 90]
       Generates a Personal Access Token (PAT) for the user.
-
-  batch-create <email1> <email2> ...
-      Registers multiple users from email addresses and generates tokens for each.
 
   revoke-token <username> <tokenId>
       Revokes an existing access token.
