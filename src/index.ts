@@ -8,3 +8,4 @@ export * from "./engine/git-process.ts";
 export * from "./engine/primary-node.ts";
 export * from "./engine/replica-node.ts";
 export * from "./engine/rendezvous-router.ts";
+export * from "./engine/git-repo-engine.ts";

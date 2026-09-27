@@ -58,11 +58,12 @@ export class AuthStore {
    * Saves the manifest to storage using Atomic Compare-And-Swap (CAS).
    */
   async saveManifest(manifest: AuthManifest): Promise<void> {
-    manifest.version += 1;
-    manifest.updatedAt = new Date().toISOString();
-    const bytes = new TextEncoder().encode(JSON.stringify(manifest, null, 2));
+    const maxRetries = 8;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      manifest.version += 1;
+      manifest.updatedAt = new Date().toISOString();
+      const bytes = new TextEncoder().encode(JSON.stringify(manifest, null, 2));
 
-    for (let attempt = 1; attempt <= 5; attempt++) {
       const getRes = await this.storage.getObject(AuthStore.MANIFEST_KEY);
       let ifMatchHeader = "NONE";
       if (getRes.status === 200 && getRes.etag) {
@@ -80,10 +81,16 @@ export class AuthStore {
       }
 
       if (putRes.status === 412) {
-        // Concurrent update race, reload and retry
-        await Bun.sleep(25 * attempt);
+        // Full jitter exponential backoff
+        const maxBackoff = Math.min(500, 25 * Math.pow(2, attempt));
+        const delay = Math.floor(Math.random() * maxBackoff);
+        await Bun.sleep(delay);
+
         const latest = await this.getManifest();
-        manifest.version = latest.version + 1;
+        manifest.version = latest.version;
+        // Merge latest users/repos to prevent overwriting parallel modifications
+        manifest.users = { ...latest.users, ...manifest.users };
+        manifest.repos = { ...latest.repos, ...manifest.repos };
         continue;
       }
 

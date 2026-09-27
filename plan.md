@@ -57,7 +57,7 @@
 - [x] **Phase 9: Single-Host Production Deployment on AWS EC2**
 - [x] **Phase 10: Serverless Architecture on AWS Lambda (Function URLs & S3)**
 - [x] **Phase 11: Authentication & Access Control (Tokens, Basic Auth & Namespaces)**
-- [ ] **Phase 12: Asynchronous Serverless Compaction Worker (EventBridge / SQS + Lambda)**
+- [x] **Phase 12: Asynchronous Serverless Compaction Worker & Architecture Improvements**
 - [ ] **Phase 13: Minimalist Web UI & Repository Explorer ("Mini-GitHub")**
 - [ ] **Phase 14: Event-Driven Webhooks Engine for CI/CD**
 - [ ] **Phase 15: Global Edge Caching & Custom Domain (CloudFront + ACM)**

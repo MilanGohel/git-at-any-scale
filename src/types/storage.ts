@@ -42,6 +42,11 @@ export interface R2StorageInterface {
   putObject(key: string, data: Uint8Array | string, options?: PutObjectOptions): Promise<PutObjectResult>;
 
   /**
+   * Streams a file directly from local disk to S3/R2 with zero in-memory buffering.
+   */
+  uploadFile(key: string, filePath: string, options?: PutObjectOptions): Promise<PutObjectResult>;
+
+  /**
    * Lists all object keys matching the prefix.
    */
   listObjects(prefix: string): Promise<string[]>;

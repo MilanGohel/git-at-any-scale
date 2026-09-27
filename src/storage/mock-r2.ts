@@ -96,6 +96,15 @@ export class MockR2Storage implements R2StorageInterface {
     };
   }
 
+  async uploadFile(
+    key: string,
+    filePath: string,
+    options?: PutObjectOptions
+  ): Promise<PutObjectResult> {
+    const fileBytes = await Bun.file(filePath).bytes();
+    return this.putObject(key, fileBytes, options);
+  }
+
   async listObjects(prefix: string): Promise<string[]> {
     const keys: string[] = [];
     for (const key of this.objects.keys()) {

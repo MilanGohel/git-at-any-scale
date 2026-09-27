@@ -5,6 +5,8 @@ import {
   ListObjectsV2Command,
   DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
+import { Upload } from "@aws-sdk/lib-storage";
+import { createReadStream } from "node:fs";
 import type {
   R2StorageInterface,
   GetObjectOptions,
@@ -128,6 +130,46 @@ export class AwsS3Storage implements R2StorageInterface {
       const errorCode = err?.name || err?.Code;
 
       // Conditional CAS 412 Precondition Failed
+      if (httpStatus === 412 || errorCode === "PreconditionFailed") {
+        return {
+          status: 412,
+          error: "Precondition Failed: ETag mismatch on AWS S3 CAS",
+        };
+      }
+
+      throw err;
+    }
+  }
+
+  async uploadFile(
+    key: string,
+    filePath: string,
+    options?: PutObjectOptions
+  ): Promise<PutObjectResult> {
+    const fileStream = createReadStream(filePath);
+
+    // Stream directly from disk to S3 using multi-part streaming (5MB part size)
+    const parallelUpload = new Upload({
+      client: this.client,
+      params: {
+        Bucket: this.bucketName,
+        Key: key,
+        Body: fileStream,
+      },
+      partSize: 5 * 1024 * 1024,
+      queueSize: 4,
+    });
+
+    try {
+      const resp = await parallelUpload.done();
+      return {
+        status: 200,
+        etag: resp.ETag,
+      };
+    } catch (err: any) {
+      const httpStatus = err?.$metadata?.httpStatusCode;
+      const errorCode = err?.name || err?.Code;
+
       if (httpStatus === 412 || errorCode === "PreconditionFailed") {
         return {
           status: 412,
