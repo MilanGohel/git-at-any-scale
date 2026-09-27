@@ -122,6 +122,28 @@ export class AuthStore {
   }
 
   /**
+   * Authenticates a request using only a raw Personal Access Token (PAT).
+   */
+  async authenticateWithToken(rawToken: string): Promise<AuthContext> {
+    const manifest = await this.getManifest();
+    for (const user of Object.values(manifest.users)) {
+      for (const token of user.tokens) {
+        const isValid = await TokenManager.verifyToken(rawToken, token);
+        if (isValid) {
+          token.lastUsedAt = new Date().toISOString();
+          this.saveManifest(manifest).catch(() => {});
+          return {
+            authenticated: true,
+            user,
+            token,
+          };
+        }
+      }
+    }
+    return { authenticated: false, error: "Invalid token" };
+  }
+
+  /**
    * Checks whether a request (read or write) is allowed on the specified repository.
    */
   async checkAccess(params: {

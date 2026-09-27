@@ -229,5 +229,39 @@ describe("Phase 11: Authentication & Access Control (Tokens, Basic Auth & Namesp
       const walRes = await storage.getObject("milan/project-x/wal_index.json");
       expect(walRes.status).toBe(200);
     });
+
+    it("should support path-based token authentication (/t/<token>/<repo>.git)", async () => {
+      await authStore.createUser("milan", "admin");
+      const { rawToken } = await authStore.createTokenForUser({
+        username: "milan",
+        tokenName: "PathToken",
+      });
+
+      // Set repo to private
+      await authStore.setRepoPolicy({
+        repoId: "token-vault",
+        owner: "milan",
+        visibility: "private",
+      });
+
+      const tokenDir = join(TEST_DIR, "token_client");
+      await mkdir(tokenDir, { recursive: true });
+      await runGit(["init", "-b", "main"], { cwd: tokenDir });
+      await Bun.write(join(tokenDir, "token.txt"), "authenticated via url path");
+      await runGit(["add", "."], { cwd: tokenDir });
+      await runGit(["commit", "-m", "init: url token"], { cwd: tokenDir });
+
+      // Push using path-based token: /t/<pat_...>/<repo>.git
+      const repoUrl = `http://127.0.0.1:${TEST_PORT}/t/${rawToken}/token-vault.git`;
+      await runGit(["remote", "add", "origin", repoUrl], { cwd: tokenDir });
+      const pushOut = await runGit(["push", "-u", "origin", "main"], { cwd: tokenDir });
+      expect(pushOut).toBeDefined();
+
+      // Clone using path-based token
+      const tokenCloneDir = join(TEST_DIR, "token_clone");
+      await runGit(["clone", repoUrl, tokenCloneDir]);
+      const content = await Bun.file(join(tokenCloneDir, "token.txt")).text();
+      expect(content).toBe("authenticated via url path");
+    });
   });
 });

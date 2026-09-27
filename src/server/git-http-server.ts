@@ -307,8 +307,18 @@ export class GitHttpServer {
       );
     }
 
+    // Match optional token in URL path: /t/<pat_token>/<repo>.git/...
+    const tokenMatch = pathname.match(/^\/t\/(pat_[a-zA-Z0-9_-]+)\/(.+)$/);
+    let pathWithoutToken = pathname;
+    let urlToken: string | undefined;
+
+    if (tokenMatch) {
+      urlToken = tokenMatch[1];
+      pathWithoutToken = `/${tokenMatch[2]}`;
+    }
+
     // Match Git smart HTTP paths: /:repoId.git/... or /:owner/:repoId.git/...
-    const match = pathname.match(/^\/((?:[a-zA-Z0-9_\-\.]+\/)?[a-zA-Z0-9_\-\.]+)\.git(\/.*)?$/);
+    const match = pathWithoutToken.match(/^\/((?:[a-zA-Z0-9_\-\.]+\/)?[a-zA-Z0-9_\-\.]+)\.git(\/.*)?$/);
     if (!match) {
       return new Response("Not Found", { status: 404 });
     }
@@ -317,11 +327,21 @@ export class GitHttpServer {
     const subpath = match[2] || "";
     const isWrite = pathname.includes("git-receive-pack") || url.search.includes("git-receive-pack");
 
-    // 1. Authenticate credentials if provided
-    const creds = this.parseBasicAuth(req);
+    // 1. Authenticate credentials (from URL token, Bearer header, or Basic auth)
     let authContext: AuthContext | undefined;
-    if (creds) {
-      authContext = await this.authStore.authenticate(creds.username, creds.token);
+    if (urlToken) {
+      authContext = await this.authStore.authenticateWithToken(urlToken);
+    } else {
+      const authHeader = req.headers.get("authorization");
+      if (authHeader?.startsWith("Bearer ")) {
+        const bearerToken = authHeader.slice(7).trim();
+        authContext = await this.authStore.authenticateWithToken(bearerToken);
+      } else {
+        const creds = this.parseBasicAuth(req);
+        if (creds) {
+          authContext = await this.authStore.authenticate(creds.username, creds.token);
+        }
+      }
     }
 
     // 2. Enforce Access Control Policy
