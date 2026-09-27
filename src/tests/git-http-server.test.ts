@@ -39,7 +39,7 @@ describe("Phase 9: Git Smart HTTP Server Daemon (EC2 Production)", () => {
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.status).toBe("healthy");
-    expect(data.server).toBe("Continuity Git Server");
+    expect(data.server).toBe("Strata Git Server");
   });
 
   test("should accept native git push over HTTP and upload to S3 WAL", async () => {

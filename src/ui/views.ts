@@ -1,12 +1,16 @@
 /**
- * Minimalist Web UI & Repository Explorer ("Mini-GitHub")
+ * Strata Git — Minimalist Web UI & Developer Explorer
  *
- * Implemented with Anti-Slop Frontend Taste-Skill:
- * - Linear-style clean developer aesthetic
- * - Native dark/light mode via CSS color-scheme
- * - Fluid typography (system sans + monospace for hashes and code)
- * - Zero heavy client bundle, instant sub-5ms SSR response
- * - Full interactive feedback (1-click copy, branch switching, file tree, code viewer)
+ * Brand Identity: Strata (Layered S3 Write-Ahead Log Architecture)
+ * Design System: Anti-Slop Frontend Taste-Skill (Linear-clean, dark-mode first, SSR)
+ *
+ * Features:
+ * - Strata tiered geometric brand identity
+ * - Interactive Personal Access Token (PAT) Documentation & Setup Guide (/tokens)
+ * - Quick Start onboarding on Home page
+ * - Repository browser with file tree, commits, and rendered README
+ * - Subdirectory navigation and line-numbered code viewer
+ * - Private repository authentication gate
  */
 
 import type { TreeEntry, CommitInfo, BlobInfo } from "./git-reader.ts";
@@ -25,9 +29,6 @@ export interface RepoContext {
   cloneUrlBasic: string;
 }
 
-/**
- * Escapes HTML characters for XSS prevention.
- */
 function escapeHtml(str: string): string {
   return str
     .replace(/&/g, "&amp;")
@@ -37,9 +38,6 @@ function escapeHtml(str: string): string {
     .replace(/'/g, "&#039;");
 }
 
-/**
- * Formats byte size into human readable string.
- */
 function formatBytes(bytes: number | null): string {
   if (bytes === null || bytes === undefined) return "-";
   if (bytes < 1024) return `${bytes} B`;
@@ -48,7 +46,7 @@ function formatBytes(bytes: number | null): string {
 }
 
 /**
- * Renders lightweight GitHub-Flavored Markdown to HTML.
+ * Lightweight GitHub-Flavored Markdown to HTML renderer.
  */
 export function renderMarkdown(md: string): string {
   const lines = md.split("\n");
@@ -62,7 +60,6 @@ export function renderMarkdown(md: string): string {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
 
-    // Code block toggle
     if (line.trim().startsWith("```")) {
       if (inCodeBlock) {
         html.push(
@@ -89,7 +86,6 @@ export function renderMarkdown(md: string): string {
       continue;
     }
 
-    // Horizontal rule
     if (/^(\*\*\*|---|___)$/.test(line.trim())) {
       if (inList) {
         html.push(listType === "ul" ? "</ul>" : "</ol>");
@@ -99,7 +95,6 @@ export function renderMarkdown(md: string): string {
       continue;
     }
 
-    // Headings
     const headingMatch = line.match(/^(#{1,6})\s+(.*)$/);
     if (headingMatch) {
       if (inList) {
@@ -112,7 +107,6 @@ export function renderMarkdown(md: string): string {
       continue;
     }
 
-    // Blockquote
     if (line.startsWith("> ")) {
       if (inList) {
         html.push(listType === "ul" ? "</ul>" : "</ol>");
@@ -123,7 +117,6 @@ export function renderMarkdown(md: string): string {
       continue;
     }
 
-    // Unordered List
     if (/^[\*\-]\s+(.*)$/.test(line)) {
       const match = line.match(/^[\*\-]\s+(.*)$/)!;
       if (!inList || listType !== "ul") {
@@ -136,7 +129,6 @@ export function renderMarkdown(md: string): string {
       continue;
     }
 
-    // Ordered List
     if (/^\d+\.\s+(.*)$/.test(line)) {
       const match = line.match(/^\d+\.\s+(.*)$/)!;
       if (!inList || listType !== "ol") {
@@ -149,7 +141,6 @@ export function renderMarkdown(md: string): string {
       continue;
     }
 
-    // Blank line closes lists
     if (!line.trim()) {
       if (inList) {
         html.push(listType === "ul" ? "</ul>" : "</ol>");
@@ -158,7 +149,6 @@ export function renderMarkdown(md: string): string {
       continue;
     }
 
-    // Regular Paragraph
     if (inList) {
       html.push(listType === "ul" ? "</ul>" : "</ol>");
       inList = false;
@@ -180,13 +170,9 @@ export function renderMarkdown(md: string): string {
 
 function formatInlineMarkdown(text: string): string {
   let res = escapeHtml(text);
-  // Code span `code`
   res = res.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
-  // Bold **text**
   res = res.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-  // Italic *text*
   res = res.replace(/\*([^*]+)\*/g, "<em>$1</em>");
-  // Links [text](url)
   res = res.replace(
     /\[([^\]]+)\]\(([^)]+)\)/g,
     '<a href="$2" rel="noopener noreferrer">$1</a>'
@@ -195,7 +181,7 @@ function formatInlineMarkdown(text: string): string {
 }
 
 /**
- * Shell layout wrapping all views with consistent styling, theme tokens, and navigation.
+ * Shell layout with Strata brand system and dark/light mode tokens.
  */
 function renderLayout(title: string, content: string, currentPath: string = ""): string {
   return `<!DOCTYPE html>
@@ -203,7 +189,8 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${escapeHtml(title)} · Continuity Git</title>
+  <title>${escapeHtml(title)} · Strata Git</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'><rect x='3' y='5' width='22' height='4' rx='2' fill='%2310b981'/><rect x='3' y='12' width='16' height='4' rx='2' fill='%2310b981' fill-opacity='0.7'/><rect x='3' y='19' width='20' height='4' rx='2' fill='%2310b981' fill-opacity='0.5'/><circle cx='23' cy='14' r='3' fill='%2310b981'/></svg>" />
   <style>
     :root {
       color-scheme: light dark;
@@ -211,10 +198,11 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
       --surface: light-dark(#f8f9fa, #121215);
       --surface-hover: light-dark(#f1f3f5, #1c1c21);
       --border: light-dark(#e9ecef, #27272a);
-      --text: light-dark(#1a1a1a, #f4f4f5);
-      --text-muted: light-dark(#6c757d, #a1a1aa);
-      --accent: light-dark(#059669, #10b981);
-      --accent-subtle: light-dark(#ecfdf5, rgba(16, 185, 129, 0.12));
+      --border-accent: light-dark(rgba(16, 185, 129, 0.3), rgba(16, 185, 129, 0.4));
+      --text: light-dark(#18181b, #f4f4f5);
+      --text-muted: light-dark(#71717a, #a1a1aa);
+      --accent: #10b981;
+      --accent-subtle: light-dark(#ecfdf5, rgba(16, 185, 129, 0.1));
       --code-bg: light-dark(#f4f4f5, #18181b);
       --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
@@ -236,9 +224,9 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
     a { color: inherit; text-decoration: none; }
     a:hover { color: var(--accent); }
 
-    /* Top Navigation */
+    /* Top Navigation with Strata Identity */
     .top-nav {
-      height: 56px;
+      height: 60px;
       border-bottom: 1px solid var(--border);
       background: var(--bg);
       position: sticky;
@@ -247,6 +235,7 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
       display: flex;
       align-items: center;
       padding: 0 24px;
+      backdrop-filter: blur(8px);
     }
     .nav-container {
       max-width: 1200px;
@@ -256,25 +245,81 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
       align-items: center;
       justify-content: space-between;
     }
+    .nav-left {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
     .nav-brand {
       display: flex;
       align-items: center;
       gap: 10px;
-      font-weight: 600;
-      font-size: 15px;
-      letter-spacing: -0.01em;
+      font-weight: 700;
+      font-size: 16px;
+      letter-spacing: -0.02em;
     }
-    .brand-logo {
-      width: 20px;
-      height: 20px;
-      fill: var(--accent);
+    .brand-mark {
+      width: 24px;
+      height: 24px;
+    }
+    .brand-tag {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--accent);
+      background: var(--accent-subtle);
+      border: 1px solid var(--border-accent);
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .nav-link {
+      color: var(--text-muted);
+      transition: color 0.15s ease;
+    }
+    .nav-link:hover, .nav-link.active {
+      color: var(--text);
+    }
+    .nav-link.active {
+      font-weight: 600;
+      color: var(--accent);
     }
     .nav-meta {
       display: flex;
       align-items: center;
-      gap: 16px;
-      font-size: 13px;
+      gap: 14px;
+    }
+    .live-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-family: var(--font-mono);
       color: var(--text-muted);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      border-radius: 9999px;
+    }
+    .pulsing-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
     }
 
     /* Main Container */
@@ -282,8 +327,33 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
       max-width: 1200px;
       width: 100%;
       margin: 0 auto;
-      padding: 24px 24px 48px;
+      padding: 32px 24px 64px;
       flex: 1;
+    }
+
+    /* Card Panels & Banners */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+    .panel-header {
+      padding: 12px 18px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+    }
+    .panel-hero {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px 32px;
+      margin-bottom: 32px;
     }
 
     /* Repo Header Banner */
@@ -316,7 +386,6 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
       border-radius: 9999px;
       border: 1px solid var(--border);
       color: var(--text-muted);
-      margin-left: 6px;
     }
     .badge-private {
       background: rgba(239, 68, 68, 0.1);
@@ -325,7 +394,7 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
     }
     .badge-public {
       background: var(--accent-subtle);
-      border-color: rgba(16, 185, 129, 0.2);
+      border-color: rgba(16, 185, 129, 0.25);
       color: var(--accent);
     }
 
@@ -333,7 +402,7 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
     .clone-box {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
@@ -342,24 +411,28 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
       font-size: 12px;
     }
     .btn-copy {
-      background: transparent;
-      border: none;
+      background: var(--bg);
+      border: 1px solid var(--border);
       color: var(--text-muted);
       cursor: pointer;
-      padding: 4px;
+      padding: 4px 10px;
       border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
       display: flex;
       align-items: center;
+      transition: all 0.15s ease;
     }
     .btn-copy:hover {
       color: var(--accent);
+      border-color: var(--accent);
       background: var(--surface-hover);
     }
 
     /* Sub Navigation Tabs */
     .repo-nav-tabs {
       display: flex;
-      gap: 20px;
+      gap: 24px;
       font-size: 14px;
       font-weight: 500;
     }
@@ -376,30 +449,12 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
       border-bottom-color: var(--accent);
     }
 
-    /* Card Panels */
-    .panel {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      overflow: hidden;
-      margin-bottom: 24px;
-    }
-    .panel-header {
-      padding: 12px 16px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      font-size: 13px;
-    }
-
     /* Commit Bar Header */
     .commit-banner {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 12px 16px;
+      padding: 12px 18px;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
@@ -407,7 +462,7 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
       font-size: 13px;
     }
     .commit-author {
-      font-weight: 500;
+      font-weight: 600;
       margin-right: 8px;
     }
     .commit-hash {
@@ -436,18 +491,18 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
       background: var(--surface-hover);
     }
     .tree-cell {
-      padding: 10px 16px;
+      padding: 11px 18px;
     }
     .tree-name-cell {
       display: flex;
       align-items: center;
-      gap: 10px;
-      font-weight: 400;
+      gap: 12px;
     }
     .tree-icon {
       color: var(--text-muted);
       width: 16px;
       height: 16px;
+      flex-shrink: 0;
     }
     .tree-size {
       color: var(--text-muted);
@@ -458,11 +513,11 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
 
     /* Markdown README Viewer */
     .readme-container {
-      padding: 24px 32px;
+      padding: 28px 36px;
     }
-    .readme-container h1 { font-size: 24px; font-weight: 600; margin: 24px 0 16px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
-    .readme-container h2 { font-size: 20px; font-weight: 600; margin: 20px 0 12px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
-    .readme-container h3 { font-size: 16px; font-weight: 600; margin: 16px 0 8px; }
+    .readme-container h1 { font-size: 24px; font-weight: 700; margin: 24px 0 16px; border-bottom: 1px solid var(--border); padding-bottom: 8px; letter-spacing: -0.01em; }
+    .readme-container h2 { font-size: 18px; font-weight: 600; margin: 20px 0 12px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+    .readme-container h3 { font-size: 15px; font-weight: 600; margin: 16px 0 8px; }
     .readme-container p { margin-bottom: 16px; line-height: 1.6; }
     .readme-container ul, .readme-container ol { margin: 0 0 16px 24px; line-height: 1.6; }
     .readme-container li { margin-bottom: 4px; }
@@ -499,7 +554,7 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
 
     /* Blob Code Viewer */
     .blob-header {
-      padding: 10px 16px;
+      padding: 10px 18px;
       background: var(--surface);
       border-bottom: 1px solid var(--border);
       display: flex;
@@ -516,7 +571,7 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
       background: var(--code-bg);
     }
     .blob-num {
-      width: 48px;
+      width: 52px;
       padding: 0 12px;
       text-align: right;
       color: var(--text-muted);
@@ -535,7 +590,7 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
       list-style: none;
     }
     .commit-item {
-      padding: 14px 16px;
+      padding: 16px 20px;
       border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
@@ -546,7 +601,7 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
       border-bottom: none;
     }
     .commit-msg {
-      font-weight: 500;
+      font-weight: 600;
       margin-bottom: 4px;
     }
     .commit-sub {
@@ -556,16 +611,16 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
 
     /* Auth Gate Card */
     .auth-gate {
-      max-width: 420px;
-      margin: 80px auto;
-      padding: 32px;
+      max-width: 440px;
+      margin: 64px auto;
+      padding: 36px 32px;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 12px;
       text-align: center;
     }
     .auth-gate h2 {
-      font-size: 18px;
+      font-size: 20px;
       font-weight: 600;
       margin-bottom: 8px;
     }
@@ -573,10 +628,11 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
       color: var(--text-muted);
       font-size: 13px;
       margin-bottom: 24px;
+      line-height: 1.5;
     }
     .auth-input {
       width: 100%;
-      padding: 10px 14px;
+      padding: 11px 14px;
       font-family: var(--font-mono);
       font-size: 13px;
       border-radius: var(--radius);
@@ -591,20 +647,63 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
     }
     .auth-btn {
       width: 100%;
-      padding: 10px;
+      padding: 11px;
       font-size: 13px;
-      font-weight: 500;
+      font-weight: 600;
       background: var(--accent);
       color: #ffffff;
       border: none;
       border-radius: var(--radius);
       cursor: pointer;
+      transition: opacity 0.15s ease;
+    }
+    .auth-btn:hover {
+      opacity: 0.9;
+    }
+
+    /* Documentation Callout Box */
+    .callout {
+      border-left: 3px solid var(--accent);
+      background: var(--surface);
+      padding: 16px 20px;
+      border-radius: 0 var(--radius) var(--radius) 0;
+      margin: 20px 0;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .code-terminal {
+      background: #09090b;
+      color: #f4f4f5;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 1.5;
+      padding: 16px 20px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      position: relative;
+      margin: 16px 0;
+      overflow-x: auto;
+    }
+    .copy-overlay-btn {
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #f4f4f5;
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .copy-overlay-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
     }
 
     /* Footer */
     .footer {
       border-top: 1px solid var(--border);
-      padding: 24px;
+      padding: 28px 24px;
       text-align: center;
       font-size: 12px;
       color: var(--text-muted);
@@ -614,15 +713,27 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
 <body>
   <nav class="top-nav">
     <div class="nav-container">
-      <a href="/" class="nav-brand">
-        <svg class="brand-logo" viewBox="0 0 24 24">
-          <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/>
-          <path d="M12 6v12M6 12h12" stroke="currentColor" stroke-width="2"/>
-        </svg>
-        <span>Continuity</span>
-      </a>
+      <div class="nav-left">
+        <a href="/" class="nav-brand">
+          <svg class="brand-mark" viewBox="0 0 28 28" fill="none">
+            <rect x="3" y="5" width="22" height="4" rx="2" fill="currentColor" fill-opacity="0.9"/>
+            <rect x="3" y="12" width="16" height="4" rx="2" fill="currentColor" fill-opacity="0.7"/>
+            <rect x="3" y="19" width="20" height="4" rx="2" fill="currentColor" fill-opacity="0.5"/>
+            <circle cx="23" cy="14" r="3" fill="var(--accent)"/>
+          </svg>
+          <span>Strata</span>
+          <span class="brand-tag">Git</span>
+        </a>
+        <div class="nav-links">
+          <a href="/" class="nav-link ${currentPath === "/" ? "active" : ""}">Repositories</a>
+          <a href="/tokens" class="nav-link ${currentPath === "/tokens" ? "active" : ""}">Access Tokens &amp; PAT</a>
+        </div>
+      </div>
       <div class="nav-meta">
-        <span>Serverless Git Platform</span>
+        <div class="live-pill">
+          <span class="pulsing-dot"></span>
+          <span>AWS Lambda Serverless</span>
+        </div>
       </div>
     </div>
   </nav>
@@ -632,7 +743,7 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
   </main>
 
   <footer class="footer">
-    Powered by Continuity Git Engine &middot; Serverless S3 Storage Architecture
+    <strong>Strata Git</strong> &middot; Serverless Write-Ahead Log Architecture on AWS S3 &middot; Zero Idle Cost
   </footer>
 
   <script>
@@ -649,7 +760,197 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
 }
 
 /**
- * Renders the Repository Overview Page (File Tree + README.md).
+ * Dedicated Access Token & Authentication Documentation Page (/tokens).
+ */
+export function renderTokensGuide(serverUrl: string): string {
+  const content = `
+    <div style="max-width: 860px; margin: 0 auto;">
+      <div style="margin-bottom: 32px;">
+        <h1 style="font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 8px;">Personal Access Tokens (PATs) &amp; Authentication</h1>
+        <p style="color: var(--text-muted); font-size: 15px;">How to generate cryptographically secure keys and authenticate with Git CLI, CI/CD, and Strata's Web Explorer.</p>
+      </div>
+
+      <!-- Quick Session Unlock Card -->
+      <div class="panel" style="padding: 24px; border-color: var(--border-accent); background: var(--accent-subtle);">
+        <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 6px;">Already have a Personal Access Token?</h3>
+        <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 16px;">Activate your browser session to access your private repositories in the Web Explorer without repeated prompts.</p>
+        <form method="GET" action="/" style="display: flex; gap: 10px;">
+          <input type="password" name="t" class="auth-input" placeholder="Paste your token (pat_...)" style="margin-bottom: 0; flex: 1; background: var(--bg);" required />
+          <button type="submit" class="auth-btn" style="width: auto; padding: 0 24px;">Activate Session</button>
+        </form>
+      </div>
+
+      <!-- Step 1: Generate PAT -->
+      <div style="margin-bottom: 36px;">
+        <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 12px;">1. Generating a Personal Access Token</h2>
+        <p style="margin-bottom: 12px; color: var(--text-muted); line-height: 1.6;">
+          Strata implements zero plaintext password storage. All access tokens start with <code>pat_</code> and are hashed using <strong>Argon2id</strong> before being committed to the authoritative S3 auth manifest (<code>_auth/auth_manifest.json</code>).
+        </p>
+
+        <p style="margin-bottom: 8px; font-weight: 500;">Run this CLI command in your terminal:</p>
+        <div class="code-terminal">
+          bun run src/scripts/manage-auth.ts create-token &lt;username&gt; --name "Laptop Key" --scopes read,write
+          <button class="copy-overlay-btn" onclick="copyText('bun run src/scripts/manage-auth.ts create-token <username> --name \\'Laptop Key\\' --scopes read,write', this)">Copy</button>
+        </div>
+
+        <div class="callout">
+          <strong>Security Note:</strong> The raw token is shown in your terminal <strong>only once</strong> when generated. Save it securely in your password manager or credential store!
+        </div>
+      </div>
+
+      <!-- Step 2: Git CLI Usage -->
+      <div style="margin-bottom: 36px;">
+        <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 12px;">2. Authenticating Git CLI with Strata</h2>
+        <p style="margin-bottom: 16px; color: var(--text-muted); line-height: 1.6;">
+          You can authenticate your native Git CLI in three ways. Method A is the most reliable for serverless hosting:
+        </p>
+
+        <h3 style="font-size: 15px; font-weight: 600; margin-bottom: 6px; color: var(--accent);">Method A: Direct Token Path (Recommended for AWS Lambda)</h3>
+        <p style="margin-bottom: 8px; color: var(--text-muted); font-size: 13px;">
+          AWS Lambda Function URLs rename the standard HTTP <code>WWW-Authenticate</code> header, which can prevent default Git CLI basic auth prompts. Embedding the token in the URL path allows Git to authenticate immediately on the first request:
+        </p>
+        <div class="code-terminal">
+          git clone ${escapeHtml(serverUrl)}/t/&lt;pat_token&gt;/&lt;owner&gt;/&lt;repo&gt;.git<br/>
+          git push  ${escapeHtml(serverUrl)}/t/&lt;pat_token&gt;/&lt;owner&gt;/&lt;repo&gt;.git main
+          <button class="copy-overlay-btn" onclick="copyText('git clone ${escapeHtml(serverUrl)}/t/<token>/<owner>/<repo>.git', this)">Copy</button>
+        </div>
+
+        <h3 style="font-size: 15px; font-weight: 600; margin: 20px 0 6px;">Method B: Standard HTTP Basic Auth</h3>
+        <p style="margin-bottom: 8px; color: var(--text-muted); font-size: 13px;">
+          Pass your username and token in standard Git URL credentials:
+        </p>
+        <div class="code-terminal">
+          git clone https://&lt;username&gt;:&lt;pat_token&gt;@${escapeHtml(new URL(serverUrl).host)}/&lt;owner&gt;/&lt;repo&gt;.git
+          <button class="copy-overlay-btn" onclick="copyText('git clone https://<username>:<token>@${escapeHtml(new URL(serverUrl).host)}/<owner>/<repo>.git', this)">Copy</button>
+        </div>
+
+        <h3 style="font-size: 15px; font-weight: 600; margin: 20px 0 6px;">Method C: Authorization Bearer Header (CI/CD Pipelines)</h3>
+        <p style="margin-bottom: 8px; color: var(--text-muted); font-size: 13px;">
+          Pass your token via Git extra headers in GitHub Actions, GitLab CI, or scripts:
+        </p>
+        <div class="code-terminal">
+          git -c http.extraHeader="Authorization: Bearer &lt;pat_token&gt;" clone ${escapeHtml(serverUrl)}/&lt;owner&gt;/&lt;repo&gt;.git
+          <button class="copy-overlay-btn" onclick="copyText('git -c http.extraHeader=\\'Authorization: Bearer <token>\\' clone ${escapeHtml(serverUrl)}/<owner>/<repo>.git', this)">Copy</button>
+        </div>
+      </div>
+
+      <!-- Step 3: Scopes & Permissions -->
+      <div style="margin-bottom: 36px;">
+        <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 12px;">3. Token Scopes &amp; Access Control</h2>
+        <table class="tree-table" style="border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;">
+          <thead>
+            <tr style="background: var(--surface); text-align: left; border-bottom: 1px solid var(--border);">
+              <th style="padding: 10px 16px;">Scope</th>
+              <th style="padding: 10px 16px;">Description</th>
+              <th style="padding: 10px 16px;">Permitted Operations</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="tree-row">
+              <td class="tree-cell"><code>read</code></td>
+              <td class="tree-cell">Read-only repository access</td>
+              <td class="tree-cell"><code>git clone</code>, <code>git pull</code>, Web UI browsing</td>
+            </tr>
+            <tr class="tree-row">
+              <td class="tree-cell"><code>write</code></td>
+              <td class="tree-cell">Read and write access</td>
+              <td class="tree-cell"><code>git push</code>, creating new repos, updating branches</td>
+            </tr>
+            <tr class="tree-row">
+              <td class="tree-cell"><code>admin</code></td>
+              <td class="tree-cell">Full administrative rights</td>
+              <td class="tree-cell">User management, repo policies, compaction triggers</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Step 4: Repository Privacy & Collaborators -->
+      <div style="margin-bottom: 36px;">
+        <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 12px;">4. Managing Repository Privacy &amp; Collaborators</h2>
+        <p style="margin-bottom: 8px; color: var(--text-muted); font-size: 13px;">Make a repository private so only authorized users with a valid token can clone or view it:</p>
+        <div class="code-terminal">
+          bun run src/scripts/manage-auth.ts set-visibility &lt;owner&gt;/&lt;repo&gt; private
+          <button class="copy-overlay-btn" onclick="copyText('bun run src/scripts/manage-auth.ts set-visibility <owner>/<repo> private', this)">Copy</button>
+        </div>
+
+        <p style="margin-top: 16px; margin-bottom: 8px; color: var(--text-muted); font-size: 13px;">Grant another user access to a private repository:</p>
+        <div class="code-terminal">
+          bun run src/scripts/manage-auth.ts add-collaborator &lt;owner&gt;/&lt;repo&gt; &lt;username&gt; write
+          <button class="copy-overlay-btn" onclick="copyText('bun run src/scripts/manage-auth.ts add-collaborator <owner>/<repo> <username> write', this)">Copy</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  return renderLayout("Access Tokens & Authentication Guide", content, "/tokens");
+}
+
+/**
+ * Platform Home & Repository Directory.
+ */
+export function renderHome(
+  repos: { repoId: string; visibility: string; owner?: string }[],
+  serverUrl: string = ""
+): string {
+  const repoCards = repos
+    .map(
+      (r) => `
+    <div class="panel" style="margin-bottom: 12px; padding: 16px 20px; display: flex; align-items: center; justify-content: space-between;">
+      <div>
+        <a href="/${escapeHtml(r.repoId)}" style="font-size: 16px; font-weight: 600;">${escapeHtml(r.repoId)}</a>
+        <span class="badge ${r.visibility === "private" ? "badge-private" : "badge-public"}" style="margin-left: 10px;">${escapeHtml(r.visibility)}</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 16px;">
+        <a href="/${escapeHtml(r.repoId)}" style="font-size: 13px; color: var(--accent); font-weight: 600;">Explore &rarr;</a>
+      </div>
+    </div>`
+    )
+    .join("\n");
+
+  const content = `
+    <!-- Strata Hero -->
+    <div class="panel-hero">
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+        <span class="brand-tag">Serverless Git Platform</span>
+        <span style="font-size: 12px; color: var(--text-muted);">&middot;</span>
+        <span style="font-size: 12px; color: var(--text-muted);">S3 Write-Ahead Log Engine</span>
+      </div>
+      <h1 style="font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 10px;">
+        Strata Git
+      </h1>
+      <p style="color: var(--text-muted); font-size: 15px; max-width: 60ch; line-height: 1.6; margin-bottom: 24px;">
+        High-scale, serverless Git hosting backed by AWS S3 immutable packfiles and Atomic CAS state transitions. Zero idle cost, sub-second catchups.
+      </p>
+
+      <!-- Quick Onboarding Strip -->
+      <div style="background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px;">
+        <div>
+          <div style="font-size: 13px; font-weight: 600;">Pushing to Strata?</div>
+          <div style="font-size: 12px; color: var(--text-muted);">Generate a Personal Access Token (PAT) to authenticate Git CLI.</div>
+        </div>
+        <div style="display: flex; gap: 10px;">
+          <a href="/tokens" style="font-size: 12px; font-weight: 600; padding: 6px 14px; background: var(--accent); color: #ffffff; border-radius: var(--radius);">
+            PAT Setup Guide &rarr;
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Repository Listing -->
+    <div style="margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between;">
+      <h2 style="font-size: 18px; font-weight: 600;">Hosted Repositories</h2>
+      <span style="font-size: 13px; color: var(--text-muted);">${repos.length} repository${repos.length === 1 ? "" : "ies"}</span>
+    </div>
+
+    ${repoCards || `<div class="panel" style="padding: 40px; text-align: center; color: var(--text-muted);">No repositories found. Push your first repository using Git CLI!</div>`}
+  `;
+
+  return renderLayout("Repositories", content, "/");
+}
+
+/**
+ * Repository Overview (File Tree + README).
  */
 export function renderRepoOverview(
   ctx: RepoContext,
@@ -742,7 +1043,7 @@ export function renderRepoOverview(
 }
 
 /**
- * Renders Subdirectory Tree View (`/:repoId/tree/:branch/:path*`).
+ * Subdirectory Tree View (/:repoId/tree/:branch/:path*).
  */
 export function renderSubTree(
   ctx: RepoContext,
@@ -762,7 +1063,6 @@ export function renderSubTree(
     }
   }
 
-  // Parent directory link
   const parentPath = parts.slice(0, -1).join("/");
   const parentHref = parentPath
     ? `/${ctx.repoId}/tree/${ctx.currentBranch}/${parentPath}`
@@ -828,7 +1128,7 @@ export function renderSubTree(
 }
 
 /**
- * Renders File Blob Viewer (`/:repoId/blob/:branch/:path*`).
+ * File Blob Viewer (/:repoId/blob/:branch/:path*).
  */
 export function renderBlobView(
   ctx: RepoContext,
@@ -889,7 +1189,7 @@ export function renderBlobView(
 }
 
 /**
- * Renders Commit History List (`/:repoId/commits/:branch*`).
+ * Commit History List (/:repoId/commits/:branch*).
  */
 export function renderCommitsView(
   ctx: RepoContext,
@@ -937,7 +1237,7 @@ export function renderCommitsView(
 }
 
 /**
- * Renders the Private Repository Unlock Gate.
+ * Private Repository Auth Gate.
  */
 export function renderAuthGate(repoId: string, error?: string): string {
   const content = `
@@ -953,41 +1253,11 @@ export function renderAuthGate(repoId: string, error?: string): string {
         <input type="password" name="t" class="auth-input" placeholder="Enter Personal Access Token (pat_...)" required autofocus />
         <button type="submit" class="auth-btn">Unlock Repository</button>
       </form>
+      <div style="margin-top: 20px; font-size: 12px; color: var(--text-muted);">
+        Don't have a token? <a href="/tokens" style="color: var(--accent); font-weight: 500;">Read the PAT Guide &rarr;</a>
+      </div>
     </div>
   `;
 
   return renderLayout(`Unlock ${repoId}`, content);
-}
-
-/**
- * Renders the Platform Home / Repository Directory.
- */
-export function renderHome(
-  repos: { repoId: string; visibility: string; owner?: string }[]
-): string {
-  const repoCards = repos
-    .map(
-      (r) => `
-    <div class="panel" style="margin-bottom: 12px; padding: 16px; display: flex; align-items: center; justify-content: space-between;">
-      <div>
-        <a href="/${escapeHtml(r.repoId)}" style="font-size: 16px; font-weight: 600;">${escapeHtml(r.repoId)}</a>
-        <span class="badge ${r.visibility === "private" ? "badge-private" : "badge-public"}" style="margin-left: 8px;">${escapeHtml(r.visibility)}</span>
-      </div>
-      <div>
-        <a href="/${escapeHtml(r.repoId)}" style="font-size: 13px; color: var(--accent); font-weight: 500;">Explore &rarr;</a>
-      </div>
-    </div>`
-    )
-    .join("\n");
-
-  const content = `
-    <div style="margin-bottom: 32px;">
-      <h1 style="font-size: 24px; font-weight: 600; margin-bottom: 8px;">Repositories</h1>
-      <p style="color: var(--text-muted); font-size: 14px;">Hosted on AWS S3 Serverless Write-Ahead Log engine.</p>
-    </div>
-
-    ${repoCards || `<div class="panel" style="padding: 32px; text-align: center; color: var(--text-muted);">No repositories hosted yet. Push with Git to create one!</div>`}
-  `;
-
-  return renderLayout("Repositories", content);
 }

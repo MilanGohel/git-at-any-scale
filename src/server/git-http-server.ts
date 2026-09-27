@@ -20,6 +20,7 @@ import { compactRepository, compactAllRepositories } from "../workers/compaction
 import { GitReader } from "../ui/git-reader.ts";
 import {
   renderHome,
+  renderTokensGuide,
   renderRepoOverview,
   renderSubTree,
   renderBlobView,
@@ -136,13 +137,31 @@ export class GitHttpServer {
     if (pathname === "/") {
       if (req.headers.get("accept")?.includes("text/html")) {
         const manifest = await this.authStore.getManifest().catch(() => undefined);
-        const repoList: { repoId: string; visibility: string; owner?: string }[] = [];
+        const repoMap = new Map<string, { repoId: string; visibility: string; owner?: string }>();
         if (manifest) {
           for (const [id, pol] of Object.entries(manifest.repos)) {
-            repoList.push({ repoId: id, visibility: pol.visibility, owner: pol.owner });
+            repoMap.set(id, { repoId: id, visibility: pol.visibility, owner: pol.owner });
           }
         }
-        return new Response(renderHome(repoList), {
+        try {
+          const allObjects = await this.storage.listObjects("");
+          for (const key of allObjects) {
+            if (key.endsWith("/wal_index.json")) {
+              const repoId = key.slice(0, -"/wal_index.json".length);
+              if (repoId && !repoMap.has(repoId)) {
+                repoMap.set(repoId, { repoId, visibility: "public" });
+              }
+            }
+          }
+        } catch {
+          // ignore storage listing errors
+        }
+
+        const host = req.headers.get("host") || `${this.host}:${this.port}`;
+        const proto = req.headers.get("x-forwarded-proto") || (host.includes("lambda-url") ? "https" : "http");
+        const serverUrl = `${proto}://${host}`;
+
+        return new Response(renderHome(Array.from(repoMap.values()), serverUrl), {
           headers: { "Content-Type": "text/html; charset=utf-8" },
         });
       }
@@ -154,7 +173,7 @@ export class GitHttpServer {
       return new Response(
         JSON.stringify({
           status: "healthy",
-          server: "Continuity Git Server",
+          server: "Strata Git Server",
           version: "1.3.0",
           storage: this.storage.constructor.name,
           engine: {
@@ -227,6 +246,15 @@ export class GitHttpServer {
 
     // If not a .git smart HTTP path, check for Web UI Explorer routes (Phase 13)
     if (!gitMatch) {
+      if (pathname === "/tokens" || pathname === "/docs/tokens") {
+        const host = req.headers.get("host") || `${this.host}:${this.port}`;
+        const proto = req.headers.get("x-forwarded-proto") || (host.includes("lambda-url") ? "https" : "http");
+        const serverUrl = `${proto}://${host}`;
+        return new Response(renderTokensGuide(serverUrl), {
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
+
       const uiMatch = pathname.match(/^\/((?:[a-zA-Z0-9_\-\.]+\/)?[a-zA-Z0-9_\-\.]+)(?:\/(tree|blob|commits)(?:\/([^\/]+)(?:\/(.*))?)?)?\/?$/);
       if (uiMatch && !pathname.endsWith(".git") && !pathname.startsWith("/api/")) {
         const repoId = uiMatch[1]!;
@@ -272,7 +300,7 @@ export class GitHttpServer {
         return new Response(access.reason, {
           status: 401,
           headers: {
-            "WWW-Authenticate": 'Basic realm="Continuity Git Server"',
+            "WWW-Authenticate": 'Basic realm="Strata Git Server"',
             "Content-Type": "text/plain",
           },
         });

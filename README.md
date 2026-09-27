@@ -335,6 +335,30 @@ Each phase has its own detailed markdown guide covering the system design, code 
 | **Phase 8** | **Origin Platform & Unified Simulation CLI**| [`docs/phases/phase-8.md`](file:///home/milan/Milan/Learning/git-at-any-scale/docs/phases/phase-8.md) |
 | **Phase 9** | **Single-Host EC2 Production Deployment**   | [`docs/phases/phase-9.md`](file:///home/milan/Milan/Learning/git-at-any-scale/docs/phases/phase-9.md) |
 | **Phase 10**| **Serverless Architecture on AWS Lambda**   | [`docs/phases/phase-10.md`](file:///home/milan/Milan/Learning/git-at-any-scale/docs/phases/phase-10.md) |
+| **Phase 11**| **Authentication, Namespaces & Argon2id PATs** | Multi-tenant auth, Argon2id tokens, basic auth, URL paths |
+| **Phase 12**| **Asynchronous Compaction Worker**          | Dedicated compaction runner, API endpoints, S3 WAL GC |
+| **Phase 13**| **Strata Git Web Explorer & UI**            | SSR code viewer, tree navigation, commit history, PAT guide |
+
+---
+
+### 🌐 Strata Git Web Explorer & PAT Authentication
+
+**Strata** is the serverless Git platform web interface powered by our S3 WAL engine:
+- **Web UI & Repository Browser**: Accessible at `/` (or `/<owner>/<repo>`), providing high-performance server-side rendered file trees, commit timelines, and syntax-rendered Markdown.
+- **PAT Setup Guide**: Located at [`/tokens`](http://localhost:3000/tokens) in the Web UI.
+- **Generate Personal Access Token (CLI)**:
+  ```bash
+  bun run src/scripts/manage-auth.ts create-token <username> --name "My Laptop" --scopes read,write
+  ```
+- **Authenticate with Git CLI**:
+  ```bash
+  # Direct token URL path (preferred for AWS Lambda Function URLs)
+  git clone https://<server-domain>/t/<pat_token>/<owner>/<repo>.git
+  git push https://<server-domain>/t/<pat_token>/<owner>/<repo>.git main
+
+  # Or standard basic auth
+  git clone https://<username>:<pat_token>@<server-domain>/<owner>/<repo>.git
+  ```
 
 ---
 

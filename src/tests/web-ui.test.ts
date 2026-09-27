@@ -177,6 +177,15 @@ describe("Phase 13: Minimalist Web UI & Repository Explorer ('Mini-GitHub')", ()
     expect(html).toContain("secret.key");
   });
 
+  test("should render the Personal Access Token (PAT) guide at GET /tokens", async () => {
+    const res = await fetch(`http://localhost:${testPort}/tokens`);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Access Tokens &amp; Authentication Guide");
+    expect(html).toContain("manage-auth.ts create-token");
+    expect(html).toContain("Activate Session");
+  });
+
   test("should ensure native Git CLI smart HTTP operations continue to work without conflict", async () => {
     const cloneUrl = `http://localhost:${testPort}/t/${userToken}/${privateRepoId}.git`;
     const checkDir = join(testDir, "cli_clone_verify");
