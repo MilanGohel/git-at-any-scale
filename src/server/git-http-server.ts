@@ -1,18 +1,11 @@
 /**
  * Git Smart HTTP Server Daemon for EC2 & AWS Serverless Lambda Hosting
  *
- * Implements the official Git Smart HTTP protocol (git-upload-pack & git-receive-pack)
- * backed by GitRepoEngine and the AWS S3 Write-Ahead Log engine.
- *
- * Capabilities:
- * - Serves standard 'git clone http://<host>:3000/<repo>.git'
- * - Serves standard 'git push http://<host>:3000/<repo>.git'
- * - Direct token path authentication (/t/<token>/<repo>.git)
- * - Automatic on-demand cold materialization from S3
- * - Background S3 WAL CAS upload on incoming pushes
- * - Zero in-memory packfile buffering (streaming direct to S3)
- * - LRU disk quota eviction on /tmp (serverless safe)
- * - Automatic asynchronous compaction (Phase 12)
+ * Implements:
+ * 1. Official Git Smart HTTP protocol (git-upload-pack & git-receive-pack)
+ * 2. Minimalist Web UI & Repository Explorer ("Mini-GitHub", Phase 13)
+ * 3. Asynchronous Auto-Compaction & API triggers (Phase 12)
+ * 4. Token & Basic Auth Access Control (Phase 11)
  */
 
 import { mkdir, readdir } from "node:fs/promises";
@@ -24,6 +17,16 @@ import { AwsS3Storage } from "../storage/aws-s3.ts";
 import { MockR2Storage } from "../storage/mock-r2.ts";
 import { GitRepoEngine } from "../engine/git-repo-engine.ts";
 import { compactRepository, compactAllRepositories } from "../workers/compaction-worker.ts";
+import { GitReader } from "../ui/git-reader.ts";
+import {
+  renderHome,
+  renderRepoOverview,
+  renderSubTree,
+  renderBlobView,
+  renderCommitsView,
+  renderAuthGate,
+  type RepoContext,
+} from "../ui/views.ts";
 
 export interface GitServerOptions {
   port?: number;
@@ -65,15 +68,15 @@ export class GitHttpServer {
     });
 
     console.log(`\n================================================================================`);
-    console.log(` 🚀 GIT SMART HTTP SERVER ACTIVE`);
+    console.log(` 🚀 GIT SMART HTTP & WEB EXPLORER ACTIVE`);
     console.log(`================================================================================`);
     console.log(`  - URL:         http://${this.host}:${this.port}/`);
     console.log(`  - Repos Root:  ${this.reposDir}`);
     console.log(`  - Storage:     ${this.storage.constructor.name}`);
-    console.log(`  - Engine:      GitRepoEngine (LRU Eviction + Jittered CAS + Auto-Compaction)`);
+    console.log(`  - Features:    Git CLI Smart HTTP + Web UI Explorer + Auto-Compaction`);
     console.log(`\nReady to accept:`);
-    console.log(`  git clone http://${this.host === "0.0.0.0" ? "localhost" : this.host}:${this.port}/<repo-id>.git`);
-    console.log(`  git push origin main`);
+    console.log(`  Web Explorer:  http://${this.host === "0.0.0.0" ? "localhost" : this.host}:${this.port}/<repo-id>`);
+    console.log(`  Git Clone:     git clone http://${this.host === "0.0.0.0" ? "localhost" : this.host}:${this.port}/<repo-id>.git`);
     console.log(`================================================================================\n`);
   }
 
@@ -84,30 +87,25 @@ export class GitHttpServer {
     }
   }
 
-  /**
-   * Resolves the disk path for a repository.
-   */
   getRepoPath(repoId: string): string {
     return this.engine.getRepoPath(repoId);
   }
 
-  /**
-   * Ensures the repository is ready on local disk.
-   */
   async ensureRepoReady(repoId: string, isWrite: boolean): Promise<boolean> {
     return this.engine.ensureRepoReady(repoId, isWrite);
   }
 
-  /**
-   * Synchronizes incoming push to S3 WAL.
-   */
   async syncPushToS3(repoId: string, prePacks: Set<string>): Promise<{ version: number; packfiles: string[] } | null> {
     return this.engine.syncPushToS3(repoId, prePacks);
   }
 
-  /**
-   * Extracts credentials from HTTP Authorization Basic header.
-   */
+  private parseCookie(req: Request, name: string): string | undefined {
+    const cookieHeader = req.headers.get("cookie");
+    if (!cookieHeader) return undefined;
+    const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
+    return match ? decodeURIComponent(match[1]!) : undefined;
+  }
+
   private parseBasicAuth(req: Request): { username: string; token: string } | null {
     const authHeader = req.headers.get("authorization");
     if (!authHeader || !authHeader.startsWith("Basic ")) {
@@ -128,11 +126,27 @@ export class GitHttpServer {
   }
 
   /**
-   * Main HTTP request router for the Git server.
+   * Main HTTP request router for the Git server and Web Explorer.
    */
   async handleRequest(req: Request): Promise<Response> {
     const url = new URL(req.url);
     const pathname = url.pathname;
+
+    // Home route: browser view vs healthcheck
+    if (pathname === "/") {
+      if (req.headers.get("accept")?.includes("text/html")) {
+        const manifest = await this.authStore.getManifest().catch(() => undefined);
+        const repoList: { repoId: string; visibility: string; owner?: string }[] = [];
+        if (manifest) {
+          for (const [id, pol] of Object.entries(manifest.repos)) {
+            repoList.push({ repoId: id, visibility: pol.visibility, owner: pol.owner });
+          }
+        }
+        return new Response(renderHome(repoList), {
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
+    }
 
     // Healthcheck endpoint
     if (pathname === "/health" || pathname === "/") {
@@ -141,7 +155,7 @@ export class GitHttpServer {
         JSON.stringify({
           status: "healthy",
           server: "Continuity Git Server",
-          version: "1.2.0",
+          version: "1.3.0",
           storage: this.storage.constructor.name,
           engine: {
             name: "GitRepoEngine",
@@ -162,7 +176,6 @@ export class GitHttpServer {
     }
 
     // API endpoint: Trigger Compaction Worker (Phase 12)
-    // POST /api/compaction/:repoId or POST /api/compaction
     const compactMatch = pathname.match(/^\/api\/compaction(?:\/(.+))?$/);
     if (compactMatch && req.method === "POST") {
       const authHeader = req.headers.get("authorization");
@@ -210,13 +223,24 @@ export class GitHttpServer {
     }
 
     // Match Git smart HTTP paths: /:repoId.git/... or /:owner/:repoId.git/...
-    const match = pathWithoutToken.match(/^\/((?:[a-zA-Z0-9_\-\.]+\/)?[a-zA-Z0-9_\-\.]+)\.git(\/.*)?$/);
-    if (!match) {
+    const gitMatch = pathWithoutToken.match(/^\/((?:[a-zA-Z0-9_\-\.]+\/)?[a-zA-Z0-9_\-\.]+)\.git(\/.*)?$/);
+
+    // If not a .git smart HTTP path, check for Web UI Explorer routes (Phase 13)
+    if (!gitMatch) {
+      const uiMatch = pathname.match(/^\/((?:[a-zA-Z0-9_\-\.]+\/)?[a-zA-Z0-9_\-\.]+)(?:\/(tree|blob|commits)(?:\/([^\/]+)(?:\/(.*))?)?)?\/?$/);
+      if (uiMatch && !pathname.endsWith(".git") && !pathname.startsWith("/api/")) {
+        const repoId = uiMatch[1]!;
+        const action = uiMatch[2] as "tree" | "blob" | "commits" | undefined;
+        const branchParam = uiMatch[3];
+        const subpath = uiMatch[4] || "";
+
+        return this.handleWebUiRequest(req, repoId, action, branchParam, subpath);
+      }
       return new Response("Not Found", { status: 404 });
     }
 
-    const repoId = match[1]!;
-    const subpath = match[2] || "";
+    const repoId = gitMatch[1]!;
+    const subpath = gitMatch[2] || "";
     const isWrite = pathname.includes("git-receive-pack") || url.search.includes("git-receive-pack");
 
     // 1. Authenticate credentials (from URL token, Bearer header, or Basic auth)
@@ -327,8 +351,138 @@ export class GitHttpServer {
   }
 
   /**
-   * Parses raw CGI output into standard HTTP Response.
+   * Handles browser Web UI requests (Phase 13).
    */
+  private async handleWebUiRequest(
+    req: Request,
+    repoId: string,
+    action?: "tree" | "blob" | "commits",
+    branchParam?: string,
+    subpath?: string
+  ): Promise<Response> {
+    const url = new URL(req.url);
+    const queryToken = url.searchParams.get("t");
+    const cookieToken = this.parseCookie(req, "git_token");
+    const userToken = queryToken || cookieToken;
+
+    // 1. Authenticate credentials
+    let authContext: AuthContext | undefined;
+    if (userToken) {
+      authContext = await this.authStore.authenticateWithToken(userToken);
+    } else {
+      const authHeader = req.headers.get("authorization");
+      if (authHeader?.startsWith("Bearer ")) {
+        authContext = await this.authStore.authenticateWithToken(authHeader.slice(7).trim());
+      } else {
+        const creds = this.parseBasicAuth(req);
+        if (creds) {
+          authContext = await this.authStore.authenticate(creds.username, creds.token);
+        }
+      }
+    }
+
+    // 2. Check access policy
+    const access = await this.authStore.checkAccess({
+      repoId,
+      isWrite: false,
+      authContext,
+    });
+
+    if (!access.allowed) {
+      const errorMsg = userToken && !authContext?.authenticated ? "Invalid Personal Access Token" : undefined;
+      return new Response(renderAuthGate(repoId, errorMsg), {
+        status: 401,
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
+
+    // 3. Ensure repo is materialized
+    const exists = await this.engine.ensureRepoReady(repoId, false);
+    if (!exists) {
+      return new Response(
+        `<!DOCTYPE html><html><body style="font-family:sans-serif;padding:48px;text-align:center;"><h2>Repository '${repoId}' not found</h2><p><a href="/">Return Home</a></p></body></html>`,
+        { status: 404, headers: { "Content-Type": "text/html; charset=utf-8" } }
+      );
+    }
+
+    const repoDir = this.engine.getRepoPath(repoId);
+    const branches = await GitReader.getBranches(repoDir);
+    const defaultBranch = await GitReader.getDefaultBranch(repoDir);
+    const currentBranch = branchParam || defaultBranch;
+
+    const host = req.headers.get("host") || `${this.host}:${this.port}`;
+    const proto = req.headers.get("x-forwarded-proto") || (host.includes("lambda-url") ? "https" : "http");
+    const serverUrl = `${proto}://${host}`;
+
+    const manifest = await this.authStore.getManifest();
+    const policy = manifest.repos[repoId];
+    const visibility = policy?.visibility || "public";
+    const nameParts = repoId.split("/");
+    const name = nameParts[nameParts.length - 1]!;
+    const owner = nameParts.length > 1 ? nameParts[0] : policy?.owner;
+
+    const ctx: RepoContext = {
+      repoId,
+      owner,
+      name,
+      defaultBranch,
+      currentBranch,
+      branches,
+      visibility,
+      serverUrl,
+      token: userToken,
+      cloneUrlToken: `${serverUrl}/t/${userToken || "<token>"}/${repoId}.git`,
+      cloneUrlBasic: `${serverUrl}/${repoId}.git`,
+    };
+
+    const headers: Record<string, string> = {
+      "Content-Type": "text/html; charset=utf-8",
+    };
+    if (queryToken && authContext?.authenticated) {
+      headers["Set-Cookie"] = `git_token=${encodeURIComponent(queryToken)}; Path=/; SameSite=Lax; HttpOnly`;
+    }
+
+    // 4. Render requested view
+    if (action === "commits") {
+      const commits = await GitReader.getCommits(repoDir, currentBranch, 50);
+      return new Response(renderCommitsView(ctx, commits), { headers });
+    }
+
+    if (action === "blob") {
+      const cleanFile = subpath || "";
+      const blob = await GitReader.getBlob(repoDir, currentBranch, cleanFile);
+      if (!blob) {
+        return new Response("File not found", { status: 404 });
+      }
+      if (url.searchParams.get("raw") === "true") {
+        return new Response(blob.content, {
+          headers: { "Content-Type": "text/plain; charset=utf-8" },
+        });
+      }
+      return new Response(renderBlobView(ctx, blob), { headers });
+    }
+
+    if (action === "tree") {
+      const cleanSubpath = subpath || "";
+      const tree = await GitReader.getTree(repoDir, currentBranch, cleanSubpath);
+      return new Response(renderSubTree(ctx, cleanSubpath, tree), { headers });
+    }
+
+    // Root overview view: tree + README
+    const tree = await GitReader.getTree(repoDir, currentBranch, "");
+    const latestCommit = await GitReader.getLatestCommit(repoDir, currentBranch);
+    let readmeContent: string | null = null;
+    const readmeEntry = tree.find((e) => e.name.toLowerCase() === "readme.md");
+    if (readmeEntry) {
+      const blob = await GitReader.getBlob(repoDir, currentBranch, readmeEntry.name);
+      if (blob && !blob.isBinary) {
+        readmeContent = blob.content;
+      }
+    }
+
+    return new Response(renderRepoOverview(ctx, tree, latestCommit, readmeContent), { headers });
+  }
+
   private parseCgiResponse(cgiBytes: Uint8Array): Response {
     let headerEndIndex = -1;
     let separatorLength = 4; // \r\n\r\n
