@@ -20,6 +20,10 @@ export interface PersonalAccessToken {
 export interface UserAccount {
   username: string; 
   email?: string; 
+  passwordHash?: string; // Argon2id hash of web login password
+  githubId?: string; // GitHub OAuth user ID if linked
+  githubUsername?: string;
+  avatarUrl?: string;
   role: "admin" | "user";
   tokens: PersonalAccessToken[];
   createdAt: string;

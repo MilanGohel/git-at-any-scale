@@ -14,6 +14,13 @@
  */
 
 import type { TreeEntry, CommitInfo, BlobInfo } from "./git-reader.ts";
+import type { UserAccount } from "../types/auth.ts";
+
+export interface CurrentUser {
+  username: string;
+  avatarUrl?: string;
+  role?: "admin" | "user";
+}
 
 export interface RepoContext {
   repoId: string;
@@ -27,6 +34,7 @@ export interface RepoContext {
   token?: string;
   cloneUrlToken: string;
   cloneUrlBasic: string;
+  currentUser?: CurrentUser;
 }
 
 function escapeHtml(str: string): string {
@@ -183,7 +191,7 @@ function formatInlineMarkdown(text: string): string {
 /**
  * Shell layout with Strata brand system and dark/light mode tokens.
  */
-function renderLayout(title: string, content: string, currentPath: string = ""): string {
+function renderLayout(title: string, content: string, currentPath: string = "", currentUser?: CurrentUser): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -347,13 +355,6 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
       align-items: center;
       justify-content: space-between;
       font-size: 13px;
-    }
-    .panel-hero {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 28px 32px;
-      margin-bottom: 32px;
     }
 
     /* Repo Header Banner */
@@ -661,6 +662,73 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
       opacity: 0.9;
     }
 
+    /* Form & Auth Styles */
+    .form-group {
+      margin-bottom: 16px;
+      text-align: left;
+    }
+    .form-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 6px;
+    }
+    .github-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      padding: 10px 14px;
+      background: #24292f;
+      color: #ffffff;
+      border: 1px solid #333842;
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-weight: 500;
+      text-decoration: none;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+    .github-btn:hover {
+      background: #2c323a;
+      color: #ffffff;
+    }
+    .divider {
+      display: flex;
+      align-items: center;
+      text-align: center;
+      margin: 20px 0;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+    .divider::before, .divider::after {
+      content: '';
+      flex: 1;
+      border-bottom: 1px solid var(--border);
+    }
+    .divider:not(:empty)::before {
+      margin-right: .75em;
+    }
+    .divider:not(:empty)::after {
+      margin-left: .75em;
+    }
+    .revoke-btn {
+      background: rgba(239, 68, 68, 0.1);
+      color: #ef4444;
+      border: 1px solid rgba(239, 68, 68, 0.25);
+      border-radius: var(--radius);
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .revoke-btn:hover {
+      background: #ef4444;
+      color: #ffffff;
+    }
+
     /* Documentation Callout Box */
     .callout {
       border-left: 3px solid var(--accent);
@@ -726,14 +794,31 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
         </a>
         <div class="nav-links">
           <a href="/" class="nav-link ${currentPath === "/" ? "active" : ""}">Repositories</a>
-          <a href="/tokens" class="nav-link ${currentPath === "/tokens" ? "active" : ""}">Access Tokens &amp; PAT</a>
+          <a href="/docs/tokens" class="nav-link ${currentPath.startsWith("/docs") || currentPath === "/tokens" ? "active" : ""}">Docs</a>
         </div>
       </div>
-      <div class="nav-meta">
+      <div class="nav-meta" style="display: flex; align-items: center; gap: 14px;">
         <div class="live-pill">
           <span class="pulsing-dot"></span>
           <span>AWS Lambda Serverless</span>
         </div>
+        ${
+          currentUser
+            ? `
+          <div style="display: flex; align-items: center; gap: 12px; margin-left: 6px;">
+            <a href="/settings/tokens" class="nav-link ${currentPath.startsWith("/settings") ? "active" : ""}" style="display: flex; align-items: center; gap: 6px; font-weight: 500;">
+              ${currentUser.avatarUrl ? `<img src="${escapeHtml(currentUser.avatarUrl)}" alt="${escapeHtml(currentUser.username)}" style="width: 20px; height: 20px; border-radius: 50%;" />` : ''}
+              <span>${escapeHtml(currentUser.username)}</span>
+            </a>
+            <a href="/settings/tokens" class="nav-link ${currentPath === "/settings/tokens" ? "active" : ""}" style="font-size: 13px;">Tokens</a>
+            <a href="/logout" class="nav-link" style="color: var(--text-muted); font-size: 13px;">Sign out</a>
+          </div>`
+            : `
+          <div style="display: flex; align-items: center; gap: 10px; margin-left: 6px;">
+            <a href="/login" class="nav-link ${currentPath === "/login" ? "active" : ""}" style="font-size: 13px;">Sign in</a>
+            <a href="/register" style="padding: 5px 12px; font-size: 12px; font-weight: 600; background: var(--accent); color: #ffffff; border-radius: var(--radius); text-decoration: none;">Sign up</a>
+          </div>`
+        }
       </div>
     </div>
   </nav>
@@ -760,19 +845,32 @@ function renderLayout(title: string, content: string, currentPath: string = ""):
 }
 
 /**
- * Dedicated Access Token & Authentication Documentation Page (/tokens).
+ * Dedicated Access Token & Authentication Documentation Page (/docs/tokens).
  */
-export function renderTokensGuide(serverUrl: string): string {
+export function renderTokensGuide(serverUrl: string, currentUser?: CurrentUser): string {
   const content = `
     <div style="max-width: 860px; margin: 0 auto;">
-      <div style="margin-bottom: 32px;">
-        <h1 style="font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 8px;">Personal Access Tokens (PATs) &amp; Authentication</h1>
-        <p style="color: var(--text-muted); font-size: 15px;">How to generate cryptographically secure keys and authenticate with Git CLI, CI/CD, and Strata's Web Explorer.</p>
+      <div style="margin-bottom: 28px;">
+        <h1 style="font-size: 26px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 8px;">Access Tokens &amp; Authentication Guide</h1>
+        <p style="color: var(--text-muted); font-size: 14px;">How to generate cryptographically secure keys and authenticate with Git CLI, CI/CD, and Strata's Web Explorer.</p>
+      </div>
+
+      <!-- Quick Web Token Generator Banner -->
+      <div class="panel" style="padding: 20px 24px; border-color: var(--border-accent); background: var(--accent-subtle); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 32px;">
+        <div>
+          <h3 style="font-size: 15px; font-weight: 600; margin-bottom: 4px;">Prefer In-Browser Token Generation?</h3>
+          <p style="color: var(--text-muted); font-size: 13px; margin: 0;">Create, copy, and revoke Personal Access Tokens directly in your account settings without running terminal scripts.</p>
+        </div>
+        <div>
+          <a href="/settings/tokens" style="display: inline-block; padding: 8px 18px; font-size: 13px; font-weight: 600; background: var(--accent); color: #ffffff; border-radius: var(--radius); text-decoration: none;">
+            Open Token Settings &rarr;
+          </a>
+        </div>
       </div>
 
       <!-- Quick Session Unlock Card -->
-      <div class="panel" style="padding: 24px; border-color: var(--border-accent); background: var(--accent-subtle);">
-        <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 6px;">Already have a Personal Access Token?</h3>
+      <div class="panel" style="padding: 24px; border-color: var(--border); margin-bottom: 32px;">
+        <h3 style="font-size: 15px; font-weight: 600; margin-bottom: 6px;">Already have a Personal Access Token?</h3>
         <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 16px;">Activate your browser session to access your private repositories in the Web Explorer without repeated prompts.</p>
         <form method="GET" action="/" style="display: flex; gap: 10px;">
           <input type="password" name="t" class="auth-input" placeholder="Paste your token (pat_...)" style="margin-bottom: 0; flex: 1; background: var(--bg);" required />
@@ -782,12 +880,12 @@ export function renderTokensGuide(serverUrl: string): string {
 
       <!-- Step 1: Generate PAT -->
       <div style="margin-bottom: 36px;">
-        <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 12px;">1. Generating a Personal Access Token</h2>
+        <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 12px;">1. Generating a Personal Access Token (CLI Alternative)</h2>
         <p style="margin-bottom: 12px; color: var(--text-muted); line-height: 1.6;">
           Strata implements zero plaintext password storage. All access tokens start with <code>pat_</code> and are hashed using <strong>Argon2id</strong> before being committed to the authoritative S3 auth manifest (<code>_auth/auth_manifest.json</code>).
         </p>
 
-        <p style="margin-bottom: 8px; font-weight: 500;">Run this CLI command in your terminal:</p>
+        <p style="margin-bottom: 8px; font-weight: 500;">Run this CLI command in your terminal (for automated CI/CD runners):</p>
         <div class="code-terminal">
           bun run src/scripts/manage-auth.ts create-token &lt;username&gt; --name "Laptop Key" --scopes read,write
           <button class="copy-overlay-btn" onclick="copyText('bun run src/scripts/manage-auth.ts create-token <username> --name \\'Laptop Key\\' --scopes read,write', this)">Copy</button>
@@ -883,22 +981,23 @@ export function renderTokensGuide(serverUrl: string): string {
     </div>
   `;
 
-  return renderLayout("Access Tokens & Authentication Guide", content, "/tokens");
+  return renderLayout("Access Tokens & Authentication Guide", content, "/docs/tokens", currentUser);
 }
 
 /**
- * Platform Home & Repository Directory.
+ * Platform Home & Repository Directory (Strictly Hosted Repositories, No Marketing Slop).
  */
 export function renderHome(
   repos: { repoId: string; visibility: string; owner?: string }[],
-  serverUrl: string = ""
+  serverUrl: string = "",
+  currentUser?: CurrentUser
 ): string {
   const repoCards = repos
     .map(
       (r) => `
     <div class="panel" style="margin-bottom: 12px; padding: 16px 20px; display: flex; align-items: center; justify-content: space-between;">
       <div>
-        <a href="/${escapeHtml(r.repoId)}" style="font-size: 16px; font-weight: 600;">${escapeHtml(r.repoId)}</a>
+        <a href="/${escapeHtml(r.repoId)}" style="font-size: 15px; font-weight: 600;">${escapeHtml(r.repoId)}</a>
         <span class="badge ${r.visibility === "private" ? "badge-private" : "badge-public"}" style="margin-left: 10px;">${escapeHtml(r.visibility)}</span>
       </div>
       <div style="display: flex; align-items: center; gap: 16px;">
@@ -909,44 +1008,278 @@ export function renderHome(
     .join("\n");
 
   const content = `
-    <!-- Strata Hero -->
-    <div class="panel-hero">
-      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
-        <span class="brand-tag">Serverless Git Platform</span>
-        <span style="font-size: 12px; color: var(--text-muted);">&middot;</span>
-        <span style="font-size: 12px; color: var(--text-muted);">S3 Write-Ahead Log Engine</span>
+    <!-- Hosted Repositories List -->
+    <div style="margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+      <div>
+        <h1 style="font-size: 22px; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 4px;">Hosted Repositories</h1>
+        <p style="font-size: 13px; color: var(--text-muted);">Decentralized Git repositories stored on AWS S3 Write-Ahead Log.</p>
       </div>
-      <h1 style="font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 10px;">
-        Strata Git
-      </h1>
-      <p style="color: var(--text-muted); font-size: 15px; max-width: 60ch; line-height: 1.6; margin-bottom: 24px;">
-        High-scale, serverless Git hosting backed by AWS S3 immutable packfiles and Atomic CAS state transitions. Zero idle cost, sub-second catchups.
-      </p>
-
-      <!-- Quick Onboarding Strip -->
-      <div style="background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px;">
-        <div>
-          <div style="font-size: 13px; font-weight: 600;">Pushing to Strata?</div>
-          <div style="font-size: 12px; color: var(--text-muted);">Generate a Personal Access Token (PAT) to authenticate Git CLI.</div>
-        </div>
-        <div style="display: flex; gap: 10px;">
-          <a href="/tokens" style="font-size: 12px; font-weight: 600; padding: 6px 14px; background: var(--accent); color: #ffffff; border-radius: var(--radius);">
-            PAT Setup Guide &rarr;
-          </a>
-        </div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="font-size: 13px; color: var(--text-muted); font-family: var(--font-mono);">${repos.length} repo${repos.length === 1 ? "" : "s"}</span>
+        <a href="/docs/tokens" style="font-size: 12px; font-weight: 500; color: var(--text-muted); padding: 5px 12px; border: 1px solid var(--border); border-radius: var(--radius);">CLI Docs &rarr;</a>
       </div>
     </div>
 
-    <!-- Repository Listing -->
-    <div style="margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between;">
-      <h2 style="font-size: 18px; font-weight: 600;">Hosted Repositories</h2>
-      <span style="font-size: 13px; color: var(--text-muted);">${repos.length} repository${repos.length === 1 ? "" : "ies"}</span>
-    </div>
-
-    ${repoCards || `<div class="panel" style="padding: 40px; text-align: center; color: var(--text-muted);">No repositories found. Push your first repository using Git CLI!</div>`}
+    ${repoCards || `<div class="panel" style="padding: 48px; text-align: center; color: var(--text-muted);">No repositories found. Push your first repository using Git CLI!</div>`}
   `;
 
-  return renderLayout("Repositories", content, "/");
+  return renderLayout("Repositories", content, "/", currentUser);
+}
+
+/**
+ * Sign In Page with Email/Password & GitHub OAuth.
+ */
+export function renderLogin(params: {
+  error?: string;
+  redirect?: string;
+  githubEnabled?: boolean;
+}): string {
+  const redirectInput = params.redirect
+    ? `<input type="hidden" name="redirect" value="${escapeHtml(params.redirect)}" />`
+    : "";
+
+  const githubSection = params.githubEnabled
+    ? `
+      <a href="/auth/github${params.redirect ? `?redirect=${encodeURIComponent(params.redirect)}` : ""}" class="github-btn">
+        <svg height="18" width="18" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path>
+        </svg>
+        <span>Continue with GitHub</span>
+      </a>
+      <div class="divider">or with email / username</div>
+    `
+    : "";
+
+  const content = `
+    <div class="auth-gate" style="text-align: left;">
+      <h2 style="font-size: 20px; font-weight: 700; margin-bottom: 6px; text-align: center;">Sign in to Strata Git</h2>
+      <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 20px; text-align: center;">Manage repositories, generate PATs, and explore code.</p>
+
+      ${params.error ? `<div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; padding: 10px 14px; border-radius: var(--radius); font-size: 13px; margin-bottom: 16px;">${escapeHtml(params.error)}</div>` : ""}
+
+      ${githubSection}
+
+      <form method="POST" action="/login">
+        ${redirectInput}
+        <div class="form-group">
+          <label class="form-label">Username or Email</label>
+          <input type="text" name="identifier" class="auth-input" placeholder="milan or you@example.com" required autofocus />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input type="password" name="password" class="auth-input" placeholder="••••••••" required />
+        </div>
+        <button type="submit" class="auth-btn">Sign In</button>
+      </form>
+
+      <div style="margin-top: 24px; text-align: center; font-size: 13px; color: var(--text-muted);">
+        Don't have an account? <a href="/register${params.redirect ? `?redirect=${encodeURIComponent(params.redirect)}` : ""}" style="color: var(--accent); font-weight: 500;">Create account &rarr;</a>
+      </div>
+    </div>
+  `;
+
+  return renderLayout("Sign In", content, "/login");
+}
+
+/**
+ * Register Account Page.
+ */
+export function renderRegister(params: {
+  error?: string;
+  redirect?: string;
+  githubEnabled?: boolean;
+}): string {
+  const redirectInput = params.redirect
+    ? `<input type="hidden" name="redirect" value="${escapeHtml(params.redirect)}" />`
+    : "";
+
+  const githubSection = params.githubEnabled
+    ? `
+      <a href="/auth/github${params.redirect ? `?redirect=${encodeURIComponent(params.redirect)}` : ""}" class="github-btn">
+        <svg height="18" width="18" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path>
+        </svg>
+        <span>Sign up with GitHub</span>
+      </a>
+      <div class="divider">or register with email</div>
+    `
+    : "";
+
+  const content = `
+    <div class="auth-gate" style="text-align: left;">
+      <h2 style="font-size: 20px; font-weight: 700; margin-bottom: 6px; text-align: center;">Create your account</h2>
+      <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 20px; text-align: center;">Serverless Git hosting on AWS S3.</p>
+
+      ${params.error ? `<div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; padding: 10px 14px; border-radius: var(--radius); font-size: 13px; margin-bottom: 16px;">${escapeHtml(params.error)}</div>` : ""}
+
+      ${githubSection}
+
+      <form method="POST" action="/register">
+        ${redirectInput}
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input type="text" name="username" class="auth-input" placeholder="e.g. milangohel" required pattern="[a-zA-Z0-9_.-]+" title="Alphanumeric, dots, hyphens, and underscores" autofocus />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email (Optional)</label>
+          <input type="email" name="email" class="auth-input" placeholder="you@example.com" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input type="password" name="password" class="auth-input" placeholder="At least 6 characters" required minlength="6" />
+        </div>
+        <button type="submit" class="auth-btn">Create Account</button>
+      </form>
+
+      <div style="margin-top: 24px; text-align: center; font-size: 13px; color: var(--text-muted);">
+        Already have an account? <a href="/login${params.redirect ? `?redirect=${encodeURIComponent(params.redirect)}` : ""}" style="color: var(--accent); font-weight: 500;">Sign in &rarr;</a>
+      </div>
+    </div>
+  `;
+
+  return renderLayout("Create Account", content, "/register");
+}
+
+/**
+ * In-Browser Personal Access Token Settings Page (/settings/tokens).
+ */
+export function renderTokenSettings(params: {
+  user: UserAccount;
+  newToken?: string;
+  serverUrl: string;
+  error?: string;
+  success?: string;
+  currentUser?: CurrentUser;
+}): string {
+  const tokenRows = (params.user.tokens || []).map((t) => `
+    <tr class="tree-row">
+      <td class="tree-cell"><strong>${escapeHtml(t.name)}</strong></td>
+      <td class="tree-cell"><code style="color: var(--accent); font-family: var(--font-mono);">${escapeHtml(t.tokenPrefix)}</code></td>
+      <td class="tree-cell">
+        ${t.scopes.map((s) => `<span class="badge ${s === 'admin' ? 'badge-private' : 'badge-public'}" style="margin-right: 4px;">${escapeHtml(s)}</span>`).join("")}
+      </td>
+      <td class="tree-cell" style="font-size: 12px; color: var(--text-muted);">${new Date(t.createdAt).toLocaleDateString()}</td>
+      <td class="tree-cell" style="font-size: 12px; color: var(--text-muted);">${t.lastUsedAt ? new Date(t.lastUsedAt).toLocaleDateString() : 'Never'}</td>
+      <td class="tree-cell" style="text-align: right;">
+        <form method="POST" action="/settings/tokens/revoke" style="display: inline;" onsubmit="return confirm('Revoke token \\'${escapeHtml(t.name)}\\'? This action cannot be undone.');">
+          <input type="hidden" name="tokenId" value="${escapeHtml(t.id)}" />
+          <button type="submit" class="revoke-btn">Revoke</button>
+        </form>
+      </td>
+    </tr>
+  `).join("\n");
+
+  const alertBanner = params.newToken ? `
+    <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid var(--accent); border-radius: var(--radius); padding: 20px; margin-bottom: 28px;">
+      <div style="display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--accent); margin-bottom: 6px; font-size: 15px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        New Personal Access Token Generated!
+      </div>
+      <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+        Make sure to copy your personal access token now. <strong>You will not be able to see it again!</strong>
+      </p>
+      <div class="code-terminal" style="margin: 0; padding: 12px 16px;">
+        <span style="font-family: var(--font-mono); font-size: 13px; color: var(--accent);">${escapeHtml(params.newToken)}</span>
+        <button class="copy-overlay-btn" onclick="copyText('${escapeHtml(params.newToken)}', this)">Copy</button>
+      </div>
+    </div>
+  ` : "";
+
+  const content = `
+    <div style="max-width: 900px; margin: 0 auto;">
+      <div style="margin-bottom: 28px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+        <div>
+          <h1 style="font-size: 24px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 4px;">Personal Access Tokens</h1>
+          <p style="font-size: 13px; color: var(--text-muted);">Manage authentication tokens used for Git CLI operations, CI/CD pipelines, and API access.</p>
+        </div>
+        <div>
+          <a href="/docs/tokens" style="font-size: 12px; font-weight: 500; color: var(--text-muted); padding: 5px 12px; border: 1px solid var(--border); border-radius: var(--radius);">CLI Documentation &rarr;</a>
+        </div>
+      </div>
+
+      ${alertBanner}
+
+      ${params.error ? `<div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; padding: 12px 16px; border-radius: var(--radius); font-size: 13px; margin-bottom: 20px;">${escapeHtml(params.error)}</div>` : ""}
+      ${params.success ? `<div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); color: var(--accent); padding: 12px 16px; border-radius: var(--radius); font-size: 13px; margin-bottom: 20px;">${escapeHtml(params.success)}</div>` : ""}
+
+      <!-- Generate New Token Card -->
+      <div class="panel" style="padding: 24px; margin-bottom: 32px;">
+        <h2 style="font-size: 16px; font-weight: 600; margin-bottom: 16px;">Generate New Personal Access Token</h2>
+        <form method="POST" action="/settings/tokens/generate">
+          <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 16px;">
+            <div>
+              <label class="form-label">Token Description / Name</label>
+              <input type="text" name="name" class="auth-input" placeholder="e.g. Work Laptop, CI Runner, Automation" required style="margin-bottom: 0;" />
+            </div>
+            <div>
+              <label class="form-label">Expiration</label>
+              <select name="expiresInDays" class="auth-input" style="margin-bottom: 0; background: var(--bg); cursor: pointer;">
+                <option value="30">30 days</option>
+                <option value="60">60 days</option>
+                <option value="90" selected>90 days</option>
+                <option value="365">1 year</option>
+                <option value="0">No expiration</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 20px;">
+            <label class="form-label" style="margin-bottom: 8px;">Select Scopes</label>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;">
+              <label style="display: flex; align-items: flex-start; gap: 10px; font-size: 13px; cursor: pointer; background: var(--surface); padding: 10px; border-radius: var(--radius); border: 1px solid var(--border);">
+                <input type="checkbox" name="scopes" value="read" checked style="margin-top: 2px;" />
+                <div>
+                  <strong>read</strong>
+                  <div style="font-size: 12px; color: var(--text-muted);">Clone and fetch repositories, browse private repos</div>
+                </div>
+              </label>
+              <label style="display: flex; align-items: flex-start; gap: 10px; font-size: 13px; cursor: pointer; background: var(--surface); padding: 10px; border-radius: var(--radius); border: 1px solid var(--border);">
+                <input type="checkbox" name="scopes" value="write" checked style="margin-top: 2px;" />
+                <div>
+                  <strong>write</strong>
+                  <div style="font-size: 12px; color: var(--text-muted);">Push commits, create new repositories</div>
+                </div>
+              </label>
+              <label style="display: flex; align-items: flex-start; gap: 10px; font-size: 13px; cursor: pointer; background: var(--surface); padding: 10px; border-radius: var(--radius); border: 1px solid var(--border);">
+                <input type="checkbox" name="scopes" value="admin" style="margin-top: 2px;" />
+                <div>
+                  <strong>admin</strong>
+                  <div style="font-size: 12px; color: var(--text-muted);">Full admin rights, compaction triggers, user management</div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <button type="submit" class="auth-btn" style="width: auto; padding: 10px 24px;">Generate Token</button>
+        </form>
+      </div>
+
+      <!-- Active Tokens List -->
+      <div style="margin-bottom: 16px;">
+        <h2 style="font-size: 16px; font-weight: 600; margin-bottom: 12px;">Active Personal Access Tokens</h2>
+      </div>
+
+      <div class="panel" style="padding: 0; overflow-x: auto;">
+        <table class="tree-table">
+          <thead>
+            <tr style="border-bottom: 1px solid var(--border); background: var(--surface);">
+              <th class="tree-cell" style="font-weight: 600; font-size: 12px; text-transform: uppercase;">Name</th>
+              <th class="tree-cell" style="font-weight: 600; font-size: 12px; text-transform: uppercase;">Token Prefix</th>
+              <th class="tree-cell" style="font-weight: 600; font-size: 12px; text-transform: uppercase;">Scopes</th>
+              <th class="tree-cell" style="font-weight: 600; font-size: 12px; text-transform: uppercase;">Created</th>
+              <th class="tree-cell" style="font-weight: 600; font-size: 12px; text-transform: uppercase;">Last Used</th>
+              <th class="tree-cell" style="font-weight: 600; font-size: 12px; text-transform: uppercase; text-align: right;">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tokenRows || `<tr><td colspan="6" style="padding: 32px; text-align: center; color: var(--text-muted); font-size: 13px;">No active tokens. Generate your first token above!</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  return renderLayout("Token Settings", content, "/settings/tokens", params.currentUser);
 }
 
 /**
@@ -1039,7 +1372,7 @@ export function renderRepoOverview(
     ${readmePanel}
   `;
 
-  return renderLayout(ctx.repoId, content);
+  return renderLayout(ctx.repoId, content, `/${ctx.repoId}`, ctx.currentUser);
 }
 
 /**
@@ -1124,7 +1457,7 @@ export function renderSubTree(
     </div>
   `;
 
-  return renderLayout(`${subpath} at ${ctx.currentBranch} · ${ctx.repoId}`, content);
+  return renderLayout(`${subpath} at ${ctx.currentBranch} · ${ctx.repoId}`, content, `/${ctx.repoId}`, ctx.currentUser);
 }
 
 /**
@@ -1185,7 +1518,7 @@ export function renderBlobView(
     </div>
   `;
 
-  return renderLayout(`${parts[parts.length - 1]} · ${ctx.repoId}`, content);
+  return renderLayout(`${parts[parts.length - 1]} · ${ctx.repoId}`, content, `/${ctx.repoId}`, ctx.currentUser);
 }
 
 /**
@@ -1233,13 +1566,13 @@ export function renderCommitsView(
     </div>
   `;
 
-  return renderLayout(`Commits · ${ctx.repoId}`, content);
+  return renderLayout(`Commits · ${ctx.repoId}`, content, `/${ctx.repoId}`, ctx.currentUser);
 }
 
 /**
  * Private Repository Auth Gate.
  */
-export function renderAuthGate(repoId: string, error?: string): string {
+export function renderAuthGate(repoId: string, error?: string, currentUser?: CurrentUser): string {
   const content = `
     <div class="auth-gate">
       <svg style="width: 32px; height: 32px; color: var(--accent); margin-bottom: 16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1254,10 +1587,10 @@ export function renderAuthGate(repoId: string, error?: string): string {
         <button type="submit" class="auth-btn">Unlock Repository</button>
       </form>
       <div style="margin-top: 20px; font-size: 12px; color: var(--text-muted);">
-        Don't have a token? <a href="/tokens" style="color: var(--accent); font-weight: 500;">Read the PAT Guide &rarr;</a>
+        Don't have a token? <a href="/docs/tokens" style="color: var(--accent); font-weight: 500;">Read the PAT Guide &rarr;</a>
       </div>
     </div>
   `;
 
-  return renderLayout(`Unlock ${repoId}`, content);
+  return renderLayout(`Unlock ${repoId}`, content, `/${repoId}`, currentUser);
 }

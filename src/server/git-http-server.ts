@@ -18,15 +18,20 @@ import { MockR2Storage } from "../storage/mock-r2.ts";
 import { GitRepoEngine } from "../engine/git-repo-engine.ts";
 import { compactRepository, compactAllRepositories } from "../workers/compaction-worker.ts";
 import { GitReader } from "../ui/git-reader.ts";
+import { SessionManager, type SessionPayload } from "../auth/session.ts";
 import {
   renderHome,
   renderTokensGuide,
+  renderLogin,
+  renderRegister,
+  renderTokenSettings,
   renderRepoOverview,
   renderSubTree,
   renderBlobView,
   renderCommitsView,
   renderAuthGate,
   type RepoContext,
+  type CurrentUser,
 } from "../ui/views.ts";
 
 export interface GitServerOptions {
@@ -133,6 +138,16 @@ export class GitHttpServer {
     const url = new URL(req.url);
     const pathname = url.pathname;
 
+    const host = req.headers.get("host") || `${this.host}:${this.port}`;
+    const proto = req.headers.get("x-forwarded-proto") || (host.includes("lambda-url") ? "https" : "http");
+    const serverUrl = `${proto}://${host}`;
+    const isSecure = proto === "https";
+
+    const session = SessionManager.getSessionFromRequest(req);
+    const currentUser: CurrentUser | undefined = session
+      ? { username: session.username, avatarUrl: session.avatarUrl, role: session.role }
+      : undefined;
+
     // Home route: browser view vs healthcheck
     if (pathname === "/") {
       if (req.headers.get("accept")?.includes("text/html")) {
@@ -157,11 +172,7 @@ export class GitHttpServer {
           // ignore storage listing errors
         }
 
-        const host = req.headers.get("host") || `${this.host}:${this.port}`;
-        const proto = req.headers.get("x-forwarded-proto") || (host.includes("lambda-url") ? "https" : "http");
-        const serverUrl = `${proto}://${host}`;
-
-        return new Response(renderHome(Array.from(repoMap.values()), serverUrl), {
+        return new Response(renderHome(Array.from(repoMap.values()), serverUrl, currentUser), {
           headers: { "Content-Type": "text/html; charset=utf-8" },
         });
       }
@@ -192,6 +203,340 @@ export class GitHttpServer {
           headers: { "Content-Type": "application/json" },
         }
       );
+    }
+
+    // ─── AUTHENTICATION ROUTES ─────────────────────────────────────────────
+
+    // Sign In (GET /login, POST /login)
+    if (pathname === "/login") {
+      const redirect = url.searchParams.get("redirect") || "/";
+      const githubEnabled = Boolean(process.env.GITHUB_CLIENT_ID);
+
+      if (req.method === "GET") {
+        if (currentUser) {
+          return new Response(null, { status: 302, headers: { Location: redirect } });
+        }
+        return new Response(renderLogin({ redirect, githubEnabled }), {
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
+
+      if (req.method === "POST") {
+        const form = await req.formData().catch(() => null);
+        const identifier = form?.get("identifier")?.toString() || "";
+        const password = form?.get("password")?.toString() || "";
+        const formRedirect = form?.get("redirect")?.toString() || redirect;
+
+        const user = await this.authStore.authenticateWithPassword(identifier, password);
+        if (!user) {
+          return new Response(
+            renderLogin({
+              error: "Invalid username/email or password.",
+              redirect: formRedirect,
+              githubEnabled,
+            }),
+            { status: 401, headers: { "Content-Type": "text/html; charset=utf-8" } }
+          );
+        }
+
+        const sessionToken = SessionManager.sign({
+          username: user.username,
+          role: user.role,
+          email: user.email,
+          avatarUrl: user.avatarUrl,
+        });
+
+        return new Response(null, {
+          status: 302,
+          headers: {
+            Location: formRedirect,
+            "Set-Cookie": SessionManager.createCookieHeader(sessionToken, isSecure),
+          },
+        });
+      }
+    }
+
+    // Sign Up / Register (GET /register, POST /register)
+    if (pathname === "/register") {
+      const redirect = url.searchParams.get("redirect") || "/";
+      const githubEnabled = Boolean(process.env.GITHUB_CLIENT_ID);
+
+      if (req.method === "GET") {
+        if (currentUser) {
+          return new Response(null, { status: 302, headers: { Location: redirect } });
+        }
+        return new Response(renderRegister({ redirect, githubEnabled }), {
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
+
+      if (req.method === "POST") {
+        const form = await req.formData().catch(() => null);
+        const username = form?.get("username")?.toString() || "";
+        const email = form?.get("email")?.toString() || undefined;
+        const password = form?.get("password")?.toString() || "";
+        const formRedirect = form?.get("redirect")?.toString() || redirect;
+
+        try {
+          const user = await this.authStore.registerUser({ username, email, password });
+          const sessionToken = SessionManager.sign({
+            username: user.username,
+            role: user.role,
+            email: user.email,
+            avatarUrl: user.avatarUrl,
+          });
+
+          return new Response(null, {
+            status: 302,
+            headers: {
+              Location: formRedirect,
+              "Set-Cookie": SessionManager.createCookieHeader(sessionToken, isSecure),
+            },
+          });
+        } catch (err: any) {
+          return new Response(
+            renderRegister({
+              error: err.message || "Failed to create account.",
+              redirect: formRedirect,
+              githubEnabled,
+            }),
+            { status: 400, headers: { "Content-Type": "text/html; charset=utf-8" } }
+          );
+        }
+      }
+    }
+
+    // Sign Out (GET /logout, POST /logout)
+    if (pathname === "/logout") {
+      return new Response(null, {
+        status: 302,
+        headers: {
+          Location: "/",
+          "Set-Cookie": SessionManager.clearCookieHeader(),
+        },
+      });
+    }
+
+    // GitHub OAuth Initiation (GET /auth/github)
+    if (pathname === "/auth/github") {
+      const clientId = process.env.GITHUB_CLIENT_ID;
+      if (!clientId) {
+        return new Response("GitHub OAuth is not configured on this instance. Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET.", {
+          status: 400,
+          headers: { "Content-Type": "text/plain" },
+        });
+      }
+      const redirect = url.searchParams.get("redirect") || "/settings/tokens";
+      const callbackUrl = `${serverUrl}/auth/github/callback`;
+      const ghUrl = `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(
+        clientId
+      )}&scope=read:user,user:email&redirect_uri=${encodeURIComponent(callbackUrl)}&state=${encodeURIComponent(redirect)}`;
+
+      return new Response(null, { status: 302, headers: { Location: ghUrl } });
+    }
+
+    // GitHub OAuth Callback (GET /auth/github/callback)
+    if (pathname === "/auth/github/callback") {
+      const code = url.searchParams.get("code");
+      const stateRedirect = url.searchParams.get("state") || "/settings/tokens";
+
+      if (!code) {
+        return new Response(null, { status: 302, headers: { Location: "/login?error=GitHub+authorization+failed" } });
+      }
+
+      try {
+        const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
+          method: "POST",
+          headers: { Accept: "application/json", "Content-Type": "application/json" },
+          body: JSON.stringify({
+            client_id: process.env.GITHUB_CLIENT_ID,
+            client_secret: process.env.GITHUB_CLIENT_SECRET,
+            code,
+          }),
+        });
+
+        const tokenData = (await tokenRes.json()) as any;
+        if (!tokenData.access_token) {
+          return new Response(
+            renderLogin({
+              error: `GitHub OAuth failed: ${tokenData.error_description || "missing access token"}`,
+              githubEnabled: true,
+            }),
+            { status: 400, headers: { "Content-Type": "text/html; charset=utf-8" } }
+          );
+        }
+
+        const ghUserRes = await fetch("https://api.github.com/user", {
+          headers: {
+            Authorization: `Bearer ${tokenData.access_token}`,
+            "User-Agent": "Strata-Git",
+          },
+        });
+        const ghUser = (await ghUserRes.json()) as any;
+
+        let email = ghUser.email;
+        if (!email) {
+          const emailsRes = await fetch("https://api.github.com/user/emails", {
+            headers: {
+              Authorization: `Bearer ${tokenData.access_token}`,
+              "User-Agent": "Strata-Git",
+            },
+          }).catch(() => null);
+          if (emailsRes && emailsRes.ok) {
+            const emails = (await emailsRes.json()) as any[];
+            const primary = emails.find((e) => e.primary && e.verified);
+            if (primary) email = primary.email;
+          }
+        }
+
+        const user = await this.authStore.findOrCreateGitHubUser({
+          id: ghUser.id,
+          login: ghUser.login,
+          email,
+          avatar_url: ghUser.avatar_url,
+        });
+
+        const sessionToken = SessionManager.sign({
+          username: user.username,
+          role: user.role,
+          email: user.email,
+          avatarUrl: user.avatarUrl,
+        });
+
+        return new Response(null, {
+          status: 302,
+          headers: {
+            Location: stateRedirect,
+            "Set-Cookie": SessionManager.createCookieHeader(sessionToken, isSecure),
+          },
+        });
+      } catch (err: any) {
+        return new Response(
+          renderLogin({
+            error: `GitHub OAuth error: ${err.message}`,
+            githubEnabled: true,
+          }),
+          { status: 500, headers: { "Content-Type": "text/html; charset=utf-8" } }
+        );
+      }
+    }
+
+    // ─── USER SETTINGS & TOKEN MANAGEMENT ─────────────────────────────────
+
+    // View Token Settings Page (GET /settings/tokens)
+    if (pathname === "/settings/tokens") {
+      if (!currentUser) {
+        return new Response(null, {
+          status: 302,
+          headers: { Location: "/login?redirect=/settings/tokens" },
+        });
+      }
+
+      const user = await this.authStore.getUser(currentUser.username);
+      if (!user) {
+        return new Response(null, { status: 302, headers: { Location: "/logout" } });
+      }
+
+      return new Response(
+        renderTokenSettings({
+          user,
+          serverUrl,
+          currentUser,
+        }),
+        { headers: { "Content-Type": "text/html; charset=utf-8" } }
+      );
+    }
+
+    // Generate Personal Access Token (POST /settings/tokens/generate or POST /api/tokens)
+    if (pathname === "/settings/tokens/generate" || (pathname === "/api/tokens" && req.method === "POST")) {
+      if (!currentUser) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      let name = "CLI Token";
+      let scopes: ("read" | "write" | "admin")[] = ["read", "write"];
+      let expiresInDays = 90;
+
+      const contentType = req.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        const body = (await req.json().catch(() => ({}))) as any;
+        if (body.name) name = body.name;
+        if (Array.isArray(body.scopes)) scopes = body.scopes;
+        if (typeof body.expiresInDays === "number") expiresInDays = body.expiresInDays;
+      } else {
+        const form = await req.formData().catch(() => null);
+        if (form) {
+          if (form.get("name")) name = form.get("name")!.toString();
+          const formScopes = form.getAll("scopes").map((s) => s.toString()) as ("read" | "write" | "admin")[];
+          if (formScopes.length > 0) scopes = formScopes;
+          if (form.get("expiresInDays")) expiresInDays = parseInt(form.get("expiresInDays")!.toString(), 10);
+        }
+      }
+
+      const { rawToken, token } = await this.authStore.createTokenForUser({
+        username: currentUser.username,
+        tokenName: name,
+        scopes,
+        expiresInDays,
+      });
+
+      if (req.headers.get("accept")?.includes("application/json")) {
+        return new Response(JSON.stringify({ status: "success", rawToken, token }), {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const updatedUser = await this.authStore.getUser(currentUser.username);
+      return new Response(
+        renderTokenSettings({
+          user: updatedUser!,
+          newToken: rawToken,
+          serverUrl,
+          currentUser,
+        }),
+        { headers: { "Content-Type": "text/html; charset=utf-8" } }
+      );
+    }
+
+    // Revoke Token (POST /settings/tokens/revoke or POST /api/tokens/:id/revoke)
+    const revokeMatch = pathname.match(/^\/api\/tokens\/([a-zA-Z0-9_\-]+)\/revoke$/);
+    if (pathname === "/settings/tokens/revoke" || (revokeMatch && req.method === "POST")) {
+      if (!currentUser) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      let tokenId = revokeMatch ? revokeMatch[1] : "";
+      if (!tokenId) {
+        const form = await req.formData().catch(() => null);
+        tokenId = form?.get("tokenId")?.toString() || "";
+      }
+
+      const revoked = await this.authStore.revokeToken(currentUser.username, tokenId);
+
+      if (req.headers.get("accept")?.includes("application/json")) {
+        return new Response(JSON.stringify({ status: "success", revoked }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(null, {
+        status: 302,
+        headers: { Location: "/settings/tokens" },
+      });
+    }
+
+    // Documentation / Tokens Guide (GET /docs, /docs/tokens, /tokens)
+    if (pathname === "/docs" || pathname === "/docs/tokens" || pathname === "/tokens") {
+      return new Response(renderTokensGuide(serverUrl, currentUser), {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
     }
 
     // API endpoint: Trigger Compaction Worker (Phase 12)
@@ -246,15 +591,6 @@ export class GitHttpServer {
 
     // If not a .git smart HTTP path, check for Web UI Explorer routes (Phase 13)
     if (!gitMatch) {
-      if (pathname === "/tokens" || pathname === "/docs/tokens") {
-        const host = req.headers.get("host") || `${this.host}:${this.port}`;
-        const proto = req.headers.get("x-forwarded-proto") || (host.includes("lambda-url") ? "https" : "http");
-        const serverUrl = `${proto}://${host}`;
-        return new Response(renderTokensGuide(serverUrl), {
-          headers: { "Content-Type": "text/html; charset=utf-8" },
-        });
-      }
-
       const uiMatch = pathname.match(/^\/((?:[a-zA-Z0-9_\-\.]+\/)?[a-zA-Z0-9_\-\.]+)(?:\/(tree|blob|commits)(?:\/([^\/]+)(?:\/(.*))?)?)?\/?$/);
       if (uiMatch && !pathname.endsWith(".git") && !pathname.startsWith("/api/")) {
         const repoId = uiMatch[1]!;
@@ -393,10 +729,20 @@ export class GitHttpServer {
     const cookieToken = this.parseCookie(req, "git_token");
     const userToken = queryToken || cookieToken;
 
+    const session = SessionManager.getSessionFromRequest(req);
+    const currentUser: CurrentUser | undefined = session
+      ? { username: session.username, avatarUrl: session.avatarUrl, role: session.role }
+      : undefined;
+
     // 1. Authenticate credentials
     let authContext: AuthContext | undefined;
     if (userToken) {
       authContext = await this.authStore.authenticateWithToken(userToken);
+    } else if (session) {
+      const user = await this.authStore.getUser(session.username);
+      if (user) {
+        authContext = { authenticated: true, user };
+      }
     } else {
       const authHeader = req.headers.get("authorization");
       if (authHeader?.startsWith("Bearer ")) {
@@ -418,7 +764,7 @@ export class GitHttpServer {
 
     if (!access.allowed) {
       const errorMsg = userToken && !authContext?.authenticated ? "Invalid Personal Access Token" : undefined;
-      return new Response(renderAuthGate(repoId, errorMsg), {
+      return new Response(renderAuthGate(repoId, errorMsg, currentUser), {
         status: 401,
         headers: { "Content-Type": "text/html; charset=utf-8" },
       });
@@ -461,6 +807,7 @@ export class GitHttpServer {
       token: userToken,
       cloneUrlToken: `${serverUrl}/t/${userToken || "<token>"}/${repoId}.git`,
       cloneUrlBasic: `${serverUrl}/${repoId}.git`,
+      currentUser,
     };
 
     const headers: Record<string, string> = {

@@ -259,24 +259,63 @@ export class AuthStore {
   }
 
   /**
-   * Registers a user account.
+   * Registers a user account with optional Argon2id password hash or OAuth metadata.
    */
-  async createUser(username: string, role: "admin" | "user" = "user", email?: string): Promise<UserAccount> {
-    const key = username.toLowerCase().trim();
+  async createUser(
+    username: string,
+    role: "admin" | "user" = "user",
+    email?: string,
+    password?: string
+  ): Promise<UserAccount> {
+    return this.registerUser({ username, role, email, password });
+  }
+
+  /**
+   * Registers a new user account with validation, password hashing, and S3 Atomic CAS persistence.
+   */
+  async registerUser(params: {
+    username: string;
+    email?: string;
+    password?: string;
+    role?: "admin" | "user";
+    githubId?: string;
+    githubUsername?: string;
+    avatarUrl?: string;
+  }): Promise<UserAccount> {
+    const key = params.username.toLowerCase().trim();
     if (!/^[a-zA-Z0-9_.-]+$/.test(key)) {
-      throw new Error(`Invalid username '${username}'. Allowed: alphanumeric, dots, hyphens, and underscores.`);
+      throw new Error(`Invalid username '${params.username}'. Allowed: alphanumeric, dots, hyphens, and underscores.`);
     }
 
     const manifest = await this.getManifest();
     if (manifest.users[key]) {
-      throw new Error(`User '${username}' already exists.`);
+      throw new Error(`User '${params.username}' already exists.`);
+    }
+
+    // First registered user automatically becomes admin if not specified
+    const assignedRole = params.role || (Object.keys(manifest.users).length === 0 ? "admin" : "user");
+
+    let passwordHash: string | undefined;
+    if (params.password) {
+      if (params.password.length < 6) {
+        throw new Error("Password must be at least 6 characters.");
+      }
+      passwordHash = await Bun.password.hash(params.password, {
+        algorithm: "argon2id",
+        memoryCost: 19456,
+        timeCost: 2,
+      });
     }
 
     const now = new Date().toISOString();
     const user: UserAccount = {
       username: key,
-      email: email?.trim(),
-      role,
+      email: params.email?.trim(),
+      passwordHash,
+      githubId: params.githubId ? String(params.githubId) : undefined,
+      githubUsername: params.githubUsername,
+      avatarUrl: params.avatarUrl,
+      role: assignedRole,
       tokens: [],
       createdAt: now,
       updatedAt: now,
@@ -285,6 +324,93 @@ export class AuthStore {
     manifest.users[key] = user;
     await this.saveManifest(manifest);
     return user;
+  }
+
+  /**
+   * Authenticates a user using email or username + password.
+   */
+  async authenticateWithPassword(identifier: string, password: string): Promise<UserAccount | undefined> {
+    if (!identifier || !password) return undefined;
+
+    const manifest = await this.getManifest();
+    const normalized = identifier.toLowerCase().trim();
+
+    // Match by username or email
+    let user: UserAccount | undefined = manifest.users[normalized];
+    if (!user) {
+      user = Object.values(manifest.users).find((u) => u.email?.toLowerCase().trim() === normalized);
+    }
+
+    if (!user || !user.passwordHash) {
+      return undefined;
+    }
+
+    try {
+      const isValid = await Bun.password.verify(password, user.passwordHash);
+      return isValid ? user : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Finds an existing user linked to a GitHub account, or creates a new one via S3 Atomic CAS.
+   */
+  async findOrCreateGitHubUser(ghUser: {
+    id: string | number;
+    login: string;
+    email?: string;
+    avatar_url?: string;
+  }): Promise<UserAccount> {
+    const ghIdStr = String(ghUser.id);
+    const manifest = await this.getManifest();
+
+    // 1. Check if user already exists by githubId
+    const existingByGhId = Object.values(manifest.users).find((u) => u.githubId === ghIdStr);
+    if (existingByGhId) {
+      let updated = false;
+      if (ghUser.avatar_url && existingByGhId.avatarUrl !== ghUser.avatar_url) {
+        existingByGhId.avatarUrl = ghUser.avatar_url;
+        updated = true;
+      }
+      if (ghUser.email && !existingByGhId.email) {
+        existingByGhId.email = ghUser.email;
+        updated = true;
+      }
+      if (updated) {
+        existingByGhId.updatedAt = new Date().toISOString();
+        await this.saveManifest(manifest).catch(() => {});
+      }
+      return existingByGhId;
+    }
+
+    // 2. Check if a user with the same GitHub username exists (unlinked)
+    const usernameKey = ghUser.login.toLowerCase().trim();
+    const existingByUsername = manifest.users[usernameKey];
+    if (existingByUsername && !existingByUsername.githubId) {
+      existingByUsername.githubId = ghIdStr;
+      existingByUsername.githubUsername = ghUser.login;
+      if (ghUser.avatar_url) existingByUsername.avatarUrl = ghUser.avatar_url;
+      if (ghUser.email && !existingByUsername.email) existingByUsername.email = ghUser.email;
+      existingByUsername.updatedAt = new Date().toISOString();
+      await this.saveManifest(manifest);
+      return existingByUsername;
+    }
+
+    // 3. Otherwise, create a new user account linked to GitHub
+    let targetUsername = usernameKey;
+    if (manifest.users[targetUsername]) {
+      targetUsername = `${usernameKey}-${ghIdStr.slice(-4)}`;
+    }
+
+    return this.registerUser({
+      username: targetUsername,
+      email: ghUser.email,
+      githubId: ghIdStr,
+      githubUsername: ghUser.login,
+      avatarUrl: ghUser.avatar_url,
+      role: Object.keys(manifest.users).length === 0 ? "admin" : "user",
+    });
   }
 
   /**
