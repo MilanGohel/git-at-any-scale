@@ -23,6 +23,7 @@ import { AuthStore } from "../auth/auth-store.ts";
 import { AwsS3Storage } from "../storage/aws-s3.ts";
 import { MockR2Storage } from "../storage/mock-r2.ts";
 import { GitRepoEngine } from "../engine/git-repo-engine.ts";
+import { compactRepository, compactAllRepositories } from "../workers/compaction-worker.ts";
 
 export interface GitServerOptions {
   port?: number;
@@ -158,6 +159,44 @@ export class GitHttpServer {
           headers: { "Content-Type": "application/json" },
         }
       );
+    }
+
+    // API endpoint: Trigger Compaction Worker (Phase 12)
+    // POST /api/compaction/:repoId or POST /api/compaction
+    const compactMatch = pathname.match(/^\/api\/compaction(?:\/(.+))?$/);
+    if (compactMatch && req.method === "POST") {
+      const authHeader = req.headers.get("authorization");
+      let authCtx: AuthContext | undefined;
+      if (authHeader?.startsWith("Bearer ")) {
+        authCtx = await this.authStore.authenticateWithToken(authHeader.slice(7).trim());
+      } else {
+        const creds = this.parseBasicAuth(req);
+        if (creds) authCtx = await this.authStore.authenticate(creds.username, creds.token);
+      }
+
+      const manifest = await this.authStore.getManifest();
+      const hasUsers = Object.keys(manifest.users).length > 0;
+      if (hasUsers && (!authCtx?.authenticated || (authCtx.user?.role !== "admin" && !authCtx.token?.scopes.includes("admin")))) {
+        return new Response(JSON.stringify({ error: "Unauthorized: Admin privileges required" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const targetRepo = compactMatch[1];
+      if (targetRepo) {
+        const res = await compactRepository(targetRepo, this.engine, 1);
+        return new Response(JSON.stringify(res), {
+          status: res.status === "error" ? 500 : 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      } else {
+        const results = await compactAllRepositories(this.engine, 2);
+        return new Response(JSON.stringify(results), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
     }
 
     // Match optional token in URL path: /t/<pat_token>/<repo>.git/...
