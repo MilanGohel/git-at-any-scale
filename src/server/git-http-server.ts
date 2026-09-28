@@ -155,7 +155,8 @@ export class GitHttpServer {
         const repoMap = new Map<string, { repoId: string; visibility: string; owner?: string }>();
         if (manifest) {
           for (const [id, pol] of Object.entries(manifest.repos)) {
-            repoMap.set(id, { repoId: id, visibility: pol.visibility, owner: pol.owner });
+            const derivedOwner = pol.owner || (id.includes("/") ? id.split("/")[0] : "milan");
+            repoMap.set(id, { repoId: id, visibility: pol.visibility, owner: derivedOwner });
           }
         }
         try {
@@ -164,7 +165,8 @@ export class GitHttpServer {
             if (key.endsWith("/wal_index.json")) {
               const repoId = key.slice(0, -"/wal_index.json".length);
               if (repoId && !repoMap.has(repoId)) {
-                repoMap.set(repoId, { repoId, visibility: "public" });
+                const derivedOwner = repoId.includes("/") ? repoId.split("/")[0] : "milan";
+                repoMap.set(repoId, { repoId, visibility: "public", owner: derivedOwner });
               }
             }
           }
@@ -793,7 +795,7 @@ export class GitHttpServer {
     const visibility = policy?.visibility || "public";
     const nameParts = repoId.split("/");
     const name = nameParts[nameParts.length - 1]!;
-    const owner = nameParts.length > 1 ? nameParts[0] : policy?.owner;
+    const owner = policy?.owner || (nameParts.length > 1 ? nameParts[0] : "milan");
 
     const ctx: RepoContext = {
       repoId,

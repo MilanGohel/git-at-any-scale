@@ -94,6 +94,7 @@ describe("Phase 13: Minimalist Web UI & Repository Explorer ('Mini-GitHub')", ()
     expect(html).toContain("Repositories");
     expect(html).toContain(publicRepoId);
     expect(html).toContain(privateRepoId);
+    expect(html).toContain("@milan");
   });
 
   test("should render repository overview at GET /:repoId with README and file tree", async () => {
@@ -182,8 +183,9 @@ describe("Phase 13: Minimalist Web UI & Repository Explorer ('Mini-GitHub')", ()
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("Access Tokens &amp; Authentication Guide");
-    expect(html).toContain("manage-auth.ts create-token");
+    expect(html).toContain("Token Settings");
     expect(html).toContain("Activate Session");
+    expect(html).not.toContain("manage-auth.ts create-token");
   });
 
   test("should ensure native Git CLI smart HTTP operations continue to work without conflict", async () => {

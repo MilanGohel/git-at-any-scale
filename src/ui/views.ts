@@ -855,11 +855,11 @@ export function renderTokensGuide(serverUrl: string, currentUser?: CurrentUser):
         <p style="color: var(--text-muted); font-size: 14px;">How to generate cryptographically secure keys and authenticate with Git CLI, CI/CD, and Strata's Web Explorer.</p>
       </div>
 
-      <!-- Quick Web Token Generator Banner -->
+      <!-- Web Token Generator Banner -->
       <div class="panel" style="padding: 20px 24px; border-color: var(--border-accent); background: var(--accent-subtle); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 32px;">
         <div>
-          <h3 style="font-size: 15px; font-weight: 600; margin-bottom: 4px;">Prefer In-Browser Token Generation?</h3>
-          <p style="color: var(--text-muted); font-size: 13px; margin: 0;">Create, copy, and revoke Personal Access Tokens directly in your account settings without running terminal scripts.</p>
+          <h3 style="font-size: 15px; font-weight: 600; margin-bottom: 4px;">Manage Personal Access Tokens Online</h3>
+          <p style="color: var(--text-muted); font-size: 13px; margin: 0;">Create, copy, and revoke Personal Access Tokens directly from your browser. No terminal commands required.</p>
         </div>
         <div>
           <a href="/settings/tokens" style="display: inline-block; padding: 8px 18px; font-size: 13px; font-weight: 600; background: var(--accent); color: #ffffff; border-radius: var(--radius); text-decoration: none;">
@@ -878,21 +878,24 @@ export function renderTokensGuide(serverUrl: string, currentUser?: CurrentUser):
         </form>
       </div>
 
-      <!-- Step 1: Generate PAT -->
+      <!-- Step 1: Generate PAT via Web UI -->
       <div style="margin-bottom: 36px;">
-        <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 12px;">1. Generating a Personal Access Token (CLI Alternative)</h2>
-        <p style="margin-bottom: 12px; color: var(--text-muted); line-height: 1.6;">
-          Strata implements zero plaintext password storage. All access tokens start with <code>pat_</code> and are hashed using <strong>Argon2id</strong> before being committed to the authoritative S3 auth manifest (<code>_auth/auth_manifest.json</code>).
+        <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 12px;">1. Generating a Personal Access Token (Web Portal)</h2>
+        <p style="margin-bottom: 14px; color: var(--text-muted); line-height: 1.6;">
+          Strata implements zero plaintext password storage. All access tokens start with <code>pat_</code> and are hashed using <strong>Argon2id</strong> before being committed to the authoritative S3 authentication manifest (<code>_auth/auth_manifest.json</code>).
         </p>
 
-        <p style="margin-bottom: 8px; font-weight: 500;">Run this CLI command in your terminal (for automated CI/CD runners):</p>
-        <div class="code-terminal">
-          bun run src/scripts/manage-auth.ts create-token &lt;username&gt; --name "Laptop Key" --scopes read,write
-          <button class="copy-overlay-btn" onclick="copyText('bun run src/scripts/manage-auth.ts create-token <username> --name \\'Laptop Key\\' --scopes read,write', this)">Copy</button>
-        </div>
+        <p style="margin-bottom: 8px; font-weight: 500;">Steps to generate a token:</p>
+        <ol style="margin-left: 20px; margin-bottom: 16px; color: var(--text-muted); line-height: 1.8; font-size: 13px;">
+          <li>Sign in to your account via <a href="/login" style="color: var(--accent); font-weight: 600;">Sign In</a> using GitHub OAuth or your email and password.</li>
+          <li>Navigate to your account <a href="/settings/tokens" style="color: var(--accent); font-weight: 600;">Token Settings</a>.</li>
+          <li>Enter a descriptive name (e.g. <code>Laptop Git CLI</code> or <code>CI/CD Runner</code>).</li>
+          <li>Select your desired expiration (30 days, 90 days, or 1 year) and required scopes (<code>read</code>, <code>write</code>, <code>admin</code>).</li>
+          <li>Click <strong>Generate Personal Access Token</strong> and immediately copy your token key.</li>
+        </ol>
 
         <div class="callout">
-          <strong>Security Note:</strong> The raw token is shown in your terminal <strong>only once</strong> when generated. Save it securely in your password manager or credential store!
+          <strong>Security Note:</strong> Your raw token is displayed <strong>only once</strong> upon creation. If lost, you can revoke the token and generate a new one at any time in <a href="/settings/tokens" style="color: var(--accent); font-weight: 600;">Token Settings</a>.
         </div>
       </div>
 
@@ -965,18 +968,15 @@ export function renderTokensGuide(serverUrl: string, currentUser?: CurrentUser):
 
       <!-- Step 4: Repository Privacy & Collaborators -->
       <div style="margin-bottom: 36px;">
-        <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 12px;">4. Managing Repository Privacy &amp; Collaborators</h2>
-        <p style="margin-bottom: 8px; color: var(--text-muted); font-size: 13px;">Make a repository private so only authorized users with a valid token can clone or view it:</p>
-        <div class="code-terminal">
-          bun run src/scripts/manage-auth.ts set-visibility &lt;owner&gt;/&lt;repo&gt; private
-          <button class="copy-overlay-btn" onclick="copyText('bun run src/scripts/manage-auth.ts set-visibility <owner>/<repo> private', this)">Copy</button>
-        </div>
-
-        <p style="margin-top: 16px; margin-bottom: 8px; color: var(--text-muted); font-size: 13px;">Grant another user access to a private repository:</p>
-        <div class="code-terminal">
-          bun run src/scripts/manage-auth.ts add-collaborator &lt;owner&gt;/&lt;repo&gt; &lt;username&gt; write
-          <button class="copy-overlay-btn" onclick="copyText('bun run src/scripts/manage-auth.ts add-collaborator <owner>/<repo> <username> write', this)">Copy</button>
-        </div>
+        <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 12px;">4. Repository Privacy &amp; Access Control</h2>
+        <p style="margin-bottom: 8px; color: var(--text-muted); font-size: 13px; line-height: 1.6;">
+          When you push a repository using your personal access token, it is automatically assigned to your account:
+        </p>
+        <ul style="margin-left: 20px; color: var(--text-muted); font-size: 13px; line-height: 1.8;">
+          <li><strong>Public Repositories:</strong> Anyone can explore files, commit history, and clone via HTTP without credentials.</li>
+          <li><strong>Private Repositories:</strong> Require authentication using a Personal Access Token with <code>read</code> scope to clone or view in the browser.</li>
+          <li><strong>Write Access:</strong> Pushing commits or creating new branches requires a token with <code>write</code> or <code>admin</code> permissions.</li>
+        </ul>
       </div>
     </div>
   `;
@@ -993,18 +993,30 @@ export function renderHome(
   currentUser?: CurrentUser
 ): string {
   const repoCards = repos
-    .map(
-      (r) => `
-    <div class="panel" style="margin-bottom: 12px; padding: 16px 20px; display: flex; align-items: center; justify-content: space-between;">
+    .map((r) => {
+      const parts = r.repoId.split("/");
+      const ownerName = r.owner || (parts.length > 1 ? parts[0] : "milan");
+      const repoName = parts.length > 1 ? parts.slice(1).join("/") : r.repoId;
+      return `
+    <div class="panel" style="margin-bottom: 12px; padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px;">
       <div>
-        <a href="/${escapeHtml(r.repoId)}" style="font-size: 15px; font-weight: 600;">${escapeHtml(r.repoId)}</a>
-        <span class="badge ${r.visibility === "private" ? "badge-private" : "badge-public"}" style="margin-left: 10px;">${escapeHtml(r.visibility)}</span>
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <a href="/${escapeHtml(r.repoId)}" style="font-size: 15px; font-weight: 600; text-decoration: none;">
+            <span style="color: var(--text-muted); font-weight: 500;">${escapeHtml(ownerName)} /</span> <span style="color: var(--text);">${escapeHtml(repoName)}</span>
+          </a>
+          <span class="badge ${r.visibility === "private" ? "badge-private" : "badge-public"}">${escapeHtml(r.visibility)}</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px; margin-top: 6px; font-size: 12px; color: var(--text-muted);">
+          <span>Owner: <strong style="color: var(--text); font-weight: 500;">@${escapeHtml(ownerName)}</strong></span>
+          <span>&bull;</span>
+          <span>S3 Packfile WAL</span>
+        </div>
       </div>
       <div style="display: flex; align-items: center; gap: 16px;">
-        <a href="/${escapeHtml(r.repoId)}" style="font-size: 13px; color: var(--accent); font-weight: 600;">Explore &rarr;</a>
+        <a href="/${escapeHtml(r.repoId)}" style="font-size: 13px; color: var(--accent); font-weight: 600; text-decoration: none;">Explore &rarr;</a>
       </div>
-    </div>`
-    )
+    </div>`;
+    })
     .join("\n");
 
   const content = `
@@ -1344,9 +1356,13 @@ export function renderRepoOverview(
   const content = `
     <div class="repo-header">
       <div class="repo-title-row">
-        <div class="repo-breadcrumbs">
-          <a href="/${ctx.repoId}"><strong>${escapeHtml(ctx.repoId)}</strong></a>
+        <div class="repo-breadcrumbs" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <a href="/${ctx.repoId}" style="text-decoration: none; font-size: 18px;">
+            <span style="color: var(--text-muted); font-weight: 500;">${escapeHtml(ctx.owner || (ctx.repoId.includes("/") ? ctx.repoId.split("/")[0] : "milan"))} /</span>
+            <strong>${escapeHtml(ctx.name)}</strong>
+          </a>
           <span class="badge ${ctx.visibility === "private" ? "badge-private" : "badge-public"}">${escapeHtml(ctx.visibility)}</span>
+          <span style="font-size: 12px; color: var(--text-muted); margin-left: 4px;">Owner: <strong style="color: var(--text); font-weight: 500;">@${escapeHtml(ctx.owner || (ctx.repoId.includes("/") ? ctx.repoId.split("/")[0] : "milan"))}</strong></span>
         </div>
         <div class="clone-box">
           <span>git clone ${escapeHtml(ctx.cloneUrlToken)}</span>
@@ -1384,7 +1400,8 @@ export function renderSubTree(
   tree: TreeEntry[]
 ): string {
   const parts = subpath.split("/").filter(Boolean);
-  let breadcrumbTrail = `<a href="/${ctx.repoId}">${escapeHtml(ctx.name)}</a>`;
+  const ownerPrefix = ctx.owner || (ctx.repoId.includes("/") ? ctx.repoId.split("/")[0] : "");
+  let breadcrumbTrail = `<a href="/${ctx.repoId}">${ownerPrefix ? `<span style="color: var(--text-muted); font-weight: 500;">${escapeHtml(ownerPrefix)} / </span>` : ""}<strong>${escapeHtml(ctx.name)}</strong></a>`;
   let accum = "";
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i]!;
@@ -1468,7 +1485,8 @@ export function renderBlobView(
   blob: BlobInfo
 ): string {
   const parts = blob.path.split("/");
-  let breadcrumbTrail = `<a href="/${ctx.repoId}">${escapeHtml(ctx.name)}</a>`;
+  const ownerPrefix = ctx.owner || (ctx.repoId.includes("/") ? ctx.repoId.split("/")[0] : "");
+  let breadcrumbTrail = `<a href="/${ctx.repoId}">${ownerPrefix ? `<span style="color: var(--text-muted); font-weight: 500;">${escapeHtml(ownerPrefix)} / </span>` : ""}<strong>${escapeHtml(ctx.name)}</strong></a>`;
   let accum = "";
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i]!;
@@ -1548,9 +1566,13 @@ export function renderCommitsView(
   const content = `
     <div class="repo-header">
       <div class="repo-title-row">
-        <div class="repo-breadcrumbs">
-          <a href="/${ctx.repoId}"><strong>${escapeHtml(ctx.repoId)}</strong></a>
+        <div class="repo-breadcrumbs" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <a href="/${ctx.repoId}" style="text-decoration: none; font-size: 18px;">
+            <span style="color: var(--text-muted); font-weight: 500;">${escapeHtml(ctx.owner || (ctx.repoId.includes("/") ? ctx.repoId.split("/")[0] : "milan"))} /</span>
+            <strong>${escapeHtml(ctx.name)}</strong>
+          </a>
           <span class="badge ${ctx.visibility === "private" ? "badge-private" : "badge-public"}">${escapeHtml(ctx.visibility)}</span>
+          <span style="font-size: 12px; color: var(--text-muted); margin-left: 4px;">Owner: <strong style="color: var(--text); font-weight: 500;">@${escapeHtml(ctx.owner || (ctx.repoId.includes("/") ? ctx.repoId.split("/")[0] : "milan"))}</strong></span>
         </div>
       </div>
       <div class="repo-nav-tabs">
