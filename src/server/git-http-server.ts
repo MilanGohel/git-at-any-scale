@@ -377,17 +377,27 @@ export class GitHttpServer {
         const ghUser = (await ghUserRes.json()) as any;
 
         let email = ghUser.email;
-        if (!email) {
-          const emailsRes = await fetch("https://api.github.com/user/emails", {
-            headers: {
-              Authorization: `Bearer ${tokenData.access_token}`,
-              "User-Agent": "Strata-Git",
-            },
-          }).catch(() => null);
-          if (emailsRes && emailsRes.ok) {
-            const emails = (await emailsRes.json()) as any[];
-            const primary = emails.find((e) => e.primary && e.verified);
-            if (primary) email = primary.email;
+        let emailVerified = false;
+
+        const emailsRes = await fetch("https://api.github.com/user/emails", {
+          headers: {
+            Authorization: `Bearer ${tokenData.access_token}`,
+            "User-Agent": "Strata-Git",
+          },
+        }).catch(() => null);
+
+        if (emailsRes && emailsRes.ok) {
+          const emails = (await emailsRes.json()) as any[];
+          const primaryVerified = emails.find((e) => e.primary && e.verified);
+          if (primaryVerified) {
+            email = primaryVerified.email;
+            emailVerified = true;
+          } else {
+            const anyVerified = emails.find((e) => e.verified);
+            if (anyVerified) {
+              email = anyVerified.email;
+              emailVerified = true;
+            }
           }
         }
 
@@ -395,6 +405,7 @@ export class GitHttpServer {
           id: ghUser.id,
           login: ghUser.login,
           email,
+          emailVerified,
           avatar_url: ghUser.avatar_url,
         });
 

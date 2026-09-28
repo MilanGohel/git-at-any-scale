@@ -115,6 +115,56 @@ describe("Phase 14: Web Authentication, Sessions & In-Browser PAT Management", (
       });
       expect(secondLogin.username).toBe("octocat");
     });
+
+    test("should securely link existing local user when verified GitHub email matches", async () => {
+      // 1. Local user registers with password and email
+      await authStore.registerUser({
+        username: "alice",
+        email: "alice@domain.org",
+        password: "alicepassword123",
+      });
+
+      // 2. Alice later signs in with GitHub using the same verified email
+      const linked = await authStore.findOrCreateGitHubUser({
+        id: 112233,
+        login: "alice_on_github",
+        email: "alice@domain.org",
+        emailVerified: true,
+      });
+
+      expect(linked.username).toBe("alice");
+      expect(linked.githubId).toBe("112233");
+      expect(linked.githubUsername).toBe("alice_on_github");
+      // Password hash remains intact
+      expect(linked.passwordHash).toBeDefined();
+    });
+
+    test("should prevent pre-account takeover when username matches but email does NOT match", async () => {
+      // 1. Attacker pre-claims "torvalds" handle with attacker email and password
+      await authStore.registerUser({
+        username: "torvalds",
+        email: "attacker@evil.com",
+        password: "attackerpassword999",
+      });
+
+      // 2. Real Linus Torvalds logs in via GitHub with his own verified email
+      const realLinus = await authStore.findOrCreateGitHubUser({
+        id: 1024,
+        login: "torvalds",
+        email: "torvalds@kernel.org",
+        emailVerified: true,
+      });
+
+      // 3. Verify real Linus was NOT merged into attacker's account!
+      expect(realLinus.username).toBe("torvalds-gh");
+      expect(realLinus.email).toBe("torvalds@kernel.org");
+      expect(realLinus.githubId).toBe("1024");
+
+      // 4. Verify attacker account was NOT given Linus's credentials
+      const attackerAcc = await authStore.getUser("torvalds");
+      expect(attackerAcc?.email).toBe("attacker@evil.com");
+      expect(attackerAcc?.githubId).toBeUndefined(); // Attacker never got Linus's GitHub link
+    });
   });
 
   describe("Web Authentication & PAT Management HTTP Endpoints", () => {

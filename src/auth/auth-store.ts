@@ -355,17 +355,23 @@ export class AuthStore {
 
   /**
    * Finds an existing user linked to a GitHub account, or creates a new one via S3 Atomic CAS.
+   * Security:
+   * 1. Matches existing user by immutable githubId.
+   * 2. Auto-links to an existing local account ONLY if the GitHub email is verified AND matches the existing account email.
+   *    Never links based purely on username (prevents Pre-Account Takeover vulnerabilities).
+   * 3. If username is already taken by an unlinked user with a different email, assigns a collision-free username.
    */
   async findOrCreateGitHubUser(ghUser: {
     id: string | number;
     login: string;
     email?: string;
+    emailVerified?: boolean;
     avatar_url?: string;
   }): Promise<UserAccount> {
     const ghIdStr = String(ghUser.id);
     const manifest = await this.getManifest();
 
-    // 1. Check if user already exists by githubId
+    // 1. Check if user already exists by immutable githubId
     const existingByGhId = Object.values(manifest.users).find((u) => u.githubId === ghIdStr);
     if (existingByGhId) {
       let updated = false;
@@ -377,6 +383,10 @@ export class AuthStore {
         existingByGhId.email = ghUser.email;
         updated = true;
       }
+      if (ghUser.login && existingByGhId.githubUsername !== ghUser.login) {
+        existingByGhId.githubUsername = ghUser.login;
+        updated = true;
+      }
       if (updated) {
         existingByGhId.updatedAt = new Date().toISOString();
         await this.saveManifest(manifest).catch(() => {});
@@ -384,23 +394,31 @@ export class AuthStore {
       return existingByGhId;
     }
 
-    // 2. Check if a user with the same GitHub username exists (unlinked)
-    const usernameKey = ghUser.login.toLowerCase().trim();
-    const existingByUsername = manifest.users[usernameKey];
-    if (existingByUsername && !existingByUsername.githubId) {
-      existingByUsername.githubId = ghIdStr;
-      existingByUsername.githubUsername = ghUser.login;
-      if (ghUser.avatar_url) existingByUsername.avatarUrl = ghUser.avatar_url;
-      if (ghUser.email && !existingByUsername.email) existingByUsername.email = ghUser.email;
-      existingByUsername.updatedAt = new Date().toISOString();
-      await this.saveManifest(manifest);
-      return existingByUsername;
+    // 2. Secure Account Linking: ONLY if email is verified and matches an existing account
+    const verifiedEmail = ghUser.emailVerified !== false && ghUser.email ? ghUser.email.toLowerCase().trim() : undefined;
+    if (verifiedEmail) {
+      const existingByEmail = Object.values(manifest.users).find(
+        (u) => u.email && u.email.toLowerCase().trim() === verifiedEmail && !u.githubId
+      );
+      if (existingByEmail) {
+        existingByEmail.githubId = ghIdStr;
+        existingByEmail.githubUsername = ghUser.login;
+        if (ghUser.avatar_url) existingByEmail.avatarUrl = ghUser.avatar_url;
+        existingByEmail.updatedAt = new Date().toISOString();
+        await this.saveManifest(manifest);
+        return existingByEmail;
+      }
     }
 
-    // 3. Otherwise, create a new user account linked to GitHub
-    let targetUsername = usernameKey;
+    // 3. Create a new user account linked to GitHub.
+    // If the username is already taken by an existing user with a different email, assign a distinct handle!
+    const baseUsername = ghUser.login.toLowerCase().trim();
+    let targetUsername = baseUsername;
     if (manifest.users[targetUsername]) {
-      targetUsername = `${usernameKey}-${ghIdStr.slice(-4)}`;
+      targetUsername = `${baseUsername}-gh`;
+      if (manifest.users[targetUsername]) {
+        targetUsername = `${baseUsername}-${ghIdStr.slice(-4)}`;
+      }
     }
 
     return this.registerUser({
