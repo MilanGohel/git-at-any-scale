@@ -94,16 +94,34 @@ if aws lambda get-function --function-name "$FUNCTION_NAME" --region "$REGION" >
     --image-uri "$ECR_URI:latest" \
     --region "$REGION" > /dev/null
   aws lambda wait function-updated --function-name "$FUNCTION_NAME" --region "$REGION" 2>/dev/null || true
+  # Prepare Lambda environment variables
+  LAMBDA_ENV="AWS_S3_BUCKET=$BUCKET,PORT=3000,AWS_LWA_PORT=3000,GIT_DATA_DIR=/tmp/repos"
+  if [ -n "${GITHUB_CLIENT_ID:-}" ]; then
+    LAMBDA_ENV="$LAMBDA_ENV,GITHUB_CLIENT_ID=$GITHUB_CLIENT_ID"
+  fi
+  if [ -n "${GITHUB_CLIENT_SECRET:-}" ]; then
+    LAMBDA_ENV="$LAMBDA_ENV,GITHUB_CLIENT_SECRET=$GITHUB_CLIENT_SECRET"
+  fi
+
   echo "  - Updating existing function configuration..."
   aws lambda update-function-configuration \
     --function-name "$FUNCTION_NAME" \
     --timeout 900 \
     --memory-size 1024 \
     --ephemeral-storage Size=2048 \
-    --environment "Variables={AWS_S3_BUCKET=$BUCKET,PORT=3000,AWS_LWA_PORT=3000,GIT_DATA_DIR=/tmp/repos}" \
+    --environment "Variables={$LAMBDA_ENV}" \
     --region "$REGION" > /dev/null || true
 else
   echo "  - Creating new function..."
+  # Prepare Lambda environment variables
+  LAMBDA_ENV="AWS_S3_BUCKET=$BUCKET,PORT=3000,AWS_LWA_PORT=3000,GIT_DATA_DIR=/tmp/repos"
+  if [ -n "${GITHUB_CLIENT_ID:-}" ]; then
+    LAMBDA_ENV="$LAMBDA_ENV,GITHUB_CLIENT_ID=$GITHUB_CLIENT_ID"
+  fi
+  if [ -n "${GITHUB_CLIENT_SECRET:-}" ]; then
+    LAMBDA_ENV="$LAMBDA_ENV,GITHUB_CLIENT_SECRET=$GITHUB_CLIENT_SECRET"
+  fi
+
   aws lambda create-function \
     --function-name "$FUNCTION_NAME" \
     --package-type Image \
@@ -112,7 +130,7 @@ else
     --timeout 900 \
     --memory-size 1024 \
     --ephemeral-storage Size=2048 \
-    --environment "Variables={AWS_S3_BUCKET=$BUCKET,PORT=3000,AWS_LWA_PORT=3000,GIT_DATA_DIR=/tmp/repos}" \
+    --environment "Variables={$LAMBDA_ENV}" \
     --region "$REGION" > /dev/null
 fi
 
