@@ -798,14 +798,10 @@ function renderLayout(title: string, content: string, currentPath: string = "", 
         </div>
       </div>
       <div class="nav-meta" style="display: flex; align-items: center; gap: 14px;">
-        <div class="live-pill">
-          <span class="pulsing-dot"></span>
-          <span>AWS Lambda Serverless</span>
-        </div>
         ${
           currentUser
             ? `
-          <div style="display: flex; align-items: center; gap: 12px; margin-left: 6px;">
+          <div style="display: flex; align-items: center; gap: 12px;">
             <a href="/settings/tokens" class="nav-link ${currentPath.startsWith("/settings") ? "active" : ""}" style="display: flex; align-items: center; gap: 6px; font-weight: 500;">
               ${currentUser.avatarUrl ? `<img src="${escapeHtml(currentUser.avatarUrl)}" alt="${escapeHtml(currentUser.username)}" style="width: 20px; height: 20px; border-radius: 50%;" />` : ''}
               <span>${escapeHtml(currentUser.username)}</span>
@@ -814,7 +810,7 @@ function renderLayout(title: string, content: string, currentPath: string = "", 
             <a href="/logout" class="nav-link" style="color: var(--text-muted); font-size: 13px;">Sign out</a>
           </div>`
             : `
-          <div style="display: flex; align-items: center; gap: 10px; margin-left: 6px;">
+          <div style="display: flex; align-items: center; gap: 10px;">
             <a href="/login" class="nav-link ${currentPath === "/login" ? "active" : ""}" style="font-size: 13px;">Sign in</a>
             <a href="/register" style="padding: 5px 12px; font-size: 12px; font-weight: 600; background: var(--accent); color: #ffffff; border-radius: var(--radius); text-decoration: none;">Sign up</a>
           </div>`
@@ -828,7 +824,7 @@ function renderLayout(title: string, content: string, currentPath: string = "", 
   </main>
 
   <footer class="footer">
-    <strong>Strata Git</strong> &middot; Serverless Write-Ahead Log Architecture on AWS S3 &middot; Zero Idle Cost
+    <strong>Strata Git</strong> &middot; Distributed Version Control Platform
   </footer>
 
   <script>
@@ -882,7 +878,7 @@ export function renderTokensGuide(serverUrl: string, currentUser?: CurrentUser):
       <div style="margin-bottom: 36px;">
         <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 12px;">1. Generating a Personal Access Token (Web Portal)</h2>
         <p style="margin-bottom: 14px; color: var(--text-muted); line-height: 1.6;">
-          Strata implements zero plaintext password storage. All access tokens start with <code>pat_</code> and are hashed using <strong>Argon2id</strong> before being committed to the authoritative S3 authentication manifest (<code>_auth/auth_manifest.json</code>).
+          Strata implements zero plaintext password storage. All access tokens start with <code>pat_</code> and are hashed using <strong>Argon2id</strong> before being committed to the authoritative authentication manifest.
         </p>
 
         <p style="margin-bottom: 8px; font-weight: 500;">Steps to generate a token:</p>
@@ -903,12 +899,12 @@ export function renderTokensGuide(serverUrl: string, currentUser?: CurrentUser):
       <div style="margin-bottom: 36px;">
         <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 12px;">2. Authenticating Git CLI with Strata</h2>
         <p style="margin-bottom: 16px; color: var(--text-muted); line-height: 1.6;">
-          You can authenticate your native Git CLI in three ways. Method A is the most reliable for serverless hosting:
+          You can authenticate your native Git CLI in three ways. Method A is the most direct and reliable:
         </p>
 
-        <h3 style="font-size: 15px; font-weight: 600; margin-bottom: 6px; color: var(--accent);">Method A: Direct Token Path (Recommended for AWS Lambda)</h3>
+        <h3 style="font-size: 15px; font-weight: 600; margin-bottom: 6px; color: var(--accent);">Method A: Direct Token Path (Recommended)</h3>
         <p style="margin-bottom: 8px; color: var(--text-muted); font-size: 13px;">
-          AWS Lambda Function URLs rename the standard HTTP <code>WWW-Authenticate</code> header, which can prevent default Git CLI basic auth prompts. Embedding the token in the URL path allows Git to authenticate immediately on the first request:
+          Embedding the token in the URL path allows Git to authenticate immediately on the first request without interactive credential prompts:
         </p>
         <div class="code-terminal">
           git clone ${escapeHtml(serverUrl)}/t/&lt;pat_token&gt;/&lt;owner&gt;/&lt;repo&gt;.git<br/>
@@ -1008,8 +1004,6 @@ export function renderHome(
         </div>
         <div style="display: flex; align-items: center; gap: 12px; margin-top: 6px; font-size: 12px; color: var(--text-muted);">
           <span>Owner: <strong style="color: var(--text); font-weight: 500;">@${escapeHtml(ownerName)}</strong></span>
-          <span>&bull;</span>
-          <span>S3 Packfile WAL</span>
         </div>
       </div>
       <div style="display: flex; align-items: center; gap: 16px;">
@@ -1024,7 +1018,7 @@ export function renderHome(
     <div style="margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
       <div>
         <h1 style="font-size: 22px; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 4px;">Hosted Repositories</h1>
-        <p style="font-size: 13px; color: var(--text-muted);">Decentralized Git repositories stored on AWS S3 Write-Ahead Log.</p>
+        <p style="font-size: 13px; color: var(--text-muted);">Explore and collaborate on Git repositories.</p>
       </div>
       <div style="display: flex; align-items: center; gap: 12px;">
         <span style="font-size: 13px; color: var(--text-muted); font-family: var(--font-mono);">${repos.length} repo${repos.length === 1 ? "" : "s"}</span>
@@ -1120,7 +1114,7 @@ export function renderRegister(params: {
   const content = `
     <div class="auth-gate" style="text-align: left;">
       <h2 style="font-size: 20px; font-weight: 700; margin-bottom: 6px; text-align: center;">Create your account</h2>
-      <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 20px; text-align: center;">Serverless Git hosting on AWS S3.</p>
+      <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 20px; text-align: center;">Host repositories, manage code, and generate access keys.</p>
 
       ${params.error ? `<div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; padding: 10px 14px; border-radius: var(--radius); font-size: 13px; margin-bottom: 16px;">${escapeHtml(params.error)}</div>` : ""}
 
